@@ -87,6 +87,7 @@ function executeAct(act,combos={}){
   owner.committed.forEach((card,ci)=>{
     setTimeout(()=>{
       if(!owner.alive)return;
+      if(card._disabled)return; // card was jammed/disabled, skip silently
       animF(owner.id,'attacking-anim');
       const aliveFoes=foes.filter(r=>r.alive);
       const aliveAllies=allies.filter(r=>r.alive);
@@ -331,6 +332,7 @@ function applySkillCondition(card, owner, aliveFoes, aliveAllies){
   }
 
   // ── No-op cards (pure utility, handled in applyUtilitySkill) ──
+  // Only skip damage if the card genuinely has no damage value
   const pureUtility = [
     'can\'t take critical','Gain 1 energy','Steal 1 energy','Destroy 1','Disable 1 card',
     'Transfer all debuffs','Remove all debuffs','Apply +10% ATK','Block one incoming',
@@ -699,15 +701,15 @@ function showPeek(fid,e){
     || (G.pvpTurn==='p2' && !isPlayerFighter)
     || G.phase==='resolve';
   document.getElementById('peekTitle').textContent=`${f.emoji} ${f.name} · ${isActivePlayer?'Your':'Enemy'} Cards`;
-  const peekPool=[...buildCardPool(f),{...CHAR_CARDS[f.name],variety:true}];
-  document.getElementById('peekCards').innerHTML=peekPool.map(c=>{
+  document.getElementById('peekCards').innerHTML=f.cardPool.map(c=>{
     const tc=typeCol(c.t);
     const val=c.t==='buff'?`+${Math.round((c.bv||0)*100)}%ATK`:c.t==='debuff'?`⬇️${Math.round((c.dv||0.20)*100)}%ATK`:c.v?`${c.t==='attack'?'⚔️':'💚'}${c.v}`:'';
     const desc=cardDesc(c,f.role);
     let badge='';
     if(isActivePlayer){
       const committed=f.committed.some(h=>h.n===c.n);
-      const inHand=(f.hand||[]).some(h=>h.n===c.n);
+      const hand=isPlayerFighter?G.hand:G.p2hand;
+      const inHand=(hand||[]).some(h=>h.ownerName===f.name&&h.n===c.n);
       if(committed)badge=`<div style="font-size:.34rem;color:var(--gold);font-weight:700">✓ QUEUED</div>`;
       else if(inHand)badge=`<div style="font-size:.34rem;color:var(--green)">in hand</div>`;
     }

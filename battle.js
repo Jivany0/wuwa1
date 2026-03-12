@@ -229,62 +229,47 @@ function pvpContinue(){
 
 // ═══════════════════════════════════════════════════════════
 // BOT AI (buildBotActs)
-// Bot draws same hand as player (4 cards: 3 basics + variety)
-// Follows same rules: 3 energy max, all cards cost 1
+// Each enemy fighter commits up to 3 cards from their hand.
 // Role-aware: support heals/shields, dps/subdps attack/disrupt
 // ═══════════════════════════════════════════════════════════
 function buildBotActs(){
   const aliveEnemies=G.enemy.filter(f=>f.alive);
-  let remainingEnergy=G.botEnergy;
   const acts=[];
-  // Distribute energy evenly across alive fighters
-  const perFighter=Math.floor(remainingEnergy/Math.max(1,aliveEnemies.length));
 
   for(const f of aliveEnemies){
-    let budget=Math.min(perFighter,remainingEnergy);
-    if(budget<=0){f.committed=[];acts.push({fighter:f,side:'enemy'});continue;}
+    if(G.botEnergy<=0){f.committed=[];acts.push({fighter:f,side:'enemy'});continue;}
 
-    // Bot picks from its own drawn hand (same 4 cards as player would have)
+    // Each fighter commits up to 3 cards (energy permitting)
+    const maxCards=Math.min(3,G.botEnergy,f.hand.length);
     const available=shuf([...f.hand]);
     const chosen=[];
 
     for(const card of available){
-      if(budget<=0||chosen.length>=3) break;
-      if(card.c>budget) continue; // can't afford (all cost 1 so this is rarely an issue)
+      if(chosen.length>=maxCards) break;
 
-      // Role-aware selection
       if(f.role==='support'){
-        // Support: prefer heal/shield skills, pick anything if nothing better
-        const isDefensive = card.skill && (
+        const isDefensive = card.shield>0 || (card.skill && (
           card.skill.includes('Heal') || card.skill.includes('heal') ||
           card.skill.includes('shield') || card.skill.includes('Shield') ||
-          card.skill.includes('DEF') || card.skill.includes('def')
-        );
-        if(isDefensive || f.hp < f.maxHp*0.5 || chosen.length===0){
-          chosen.push(card); budget--;
-        }
+          card.skill.includes('DEF')
+        ));
+        if(isDefensive || card.variety || chosen.length===0) chosen.push(card);
       } else if(f.role==='subdps'){
-        // SubDPS: prefer disrupt/debuff/energy drain cards, then anything
         const isDisruptive = card.skill && (
           card.skill.includes('Disable') || card.skill.includes('Steal') ||
           card.skill.includes('Remove') || card.skill.includes('debuff') ||
           card.skill.includes('Destroy')
         );
-        if(isDisruptive || chosen.length===0 || card.variety){
-          chosen.push(card); budget--;
-        }
+        if(isDisruptive || card.variety || card.v>0 || chosen.length===0) chosen.push(card);
       } else {
-        // DPS: prefer high-v damage cards, always pick something
-        chosen.push(card); budget--;
+        // DPS: always pick damage cards
+        chosen.push(card);
       }
     }
 
-    // Fallback: if nothing chosen, just pick up to budget cards randomly
-    if(!chosen.length){
-      available.slice(0,budget).forEach(c=>{chosen.push(c);});
-    }
+    // Fallback: if picky logic left nothing, just pick greedily
+    if(!chosen.length) available.slice(0,maxCards).forEach(c=>chosen.push(c));
 
-    remainingEnergy -= chosen.length;
     G.botEnergy -= chosen.length;
     f.committed = chosen;
     acts.push({fighter:f,side:'enemy'});
