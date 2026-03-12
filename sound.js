@@ -308,24 +308,24 @@ function newRound(){
     }
     G._shards--;
   }
-  // Slow draw
-  const slowAmt=G._slowDrawNext||0;
+  // Slow draw (legacy flag, kept for compatibility)
   G._slowDrawNext=0;
   G.round++;
   if(G.round>1&&G.round%10===1){
     G.escalation=+(G.escalation+0.10).toFixed(2);
     showCombo(`⚠️ Damage Escalation! ×${G.escalation.toFixed(1)}`);
   }
-  G.energy=Math.min(G.maxE,G.energy+3);
-  G.botEnergy=Math.min(G.maxE,G.botEnergy+3);
-  G.startEnergy=G.energy;
-  G.botStartEnergy=G.botEnergy;
+  // 4.0: flat 3 energy per round, no carry over
+  G.energy=3;
+  G.botEnergy=3;
+  G.startEnergy=3;
+  G.botStartEnergy=3;
   G.phase='commit';
   G.pvpTurn='p1';
-  G.player.filter(f=>f.alive).forEach(f=>drawForFighter(f,1,false));
-  const botDrawCount=Math.max(0,1-slowAmt);
+  // Refresh hands for all alive fighters (fresh 4 cards each round)
+  G.player.filter(f=>f.alive).forEach(f=>refreshHand(f));
+  G.enemy.filter(f=>f.alive).forEach(f=>refreshHand(f));
   if(G.mode==='pvp'){
-    G.enemy.filter(f=>f.alive).forEach(f=>drawForFighter(f,botDrawCount,true));
     // Show "pass to P1" overlay at start of new round
     setTimeout(()=>{
       const ov=document.getElementById('passOv');
@@ -442,4 +442,3 @@ function goTitle(){
 }
 function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById(id).classList.add('active');}
 function showModeSelect(){document.getElementById('modeSelectOv').classList.add('show');}
-
