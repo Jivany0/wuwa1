@@ -209,7 +209,6 @@ function renderAll(){
   document.getElementById('enemyCol').innerHTML=G.enemy.map(f=>renderFighter(f,isPvP&&isP2Turn,false)).join('');
 
   // Hand display — 4.0: cards live on f.hand per fighter
-  const isP2Turn=isPvP&&G.pvpTurn==='p2';
   const displayTeam=isP2Turn?G.enemy:G.player;
 
   // Flatten all hands from the display team into one list
