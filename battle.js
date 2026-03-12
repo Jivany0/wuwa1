@@ -23,16 +23,6 @@ function normRole(r){
   return 'dps';
 }
 
-function buildLimitedHand(pool){
-  const hand=[];let c2=0,c3=0;
-  shuf([...pool]).forEach(c=>{
-    if(c.c<=1)hand.push({...c});
-    else if(c.c===2&&c2<4){hand.push({...c});c2++;}
-    else if(c.c===3&&c3<2){hand.push({...c});c3++;}
-  });
-  return hand;
-}
-
 function makeFighter(c){
   const role=normRole(c.role||'dps');
   const rs=ROLE_ST[role];
@@ -40,24 +30,34 @@ function makeFighter(c){
   return{...c,role,maxHp,hp:maxHp,atk,def,
     shield:0,atkMult:1,buffRounds:0,debuffRounds:0,atkDebuffAmount:0,alive:true,overdrive:false,guard:false,
     id:'f'+Math.random().toString(36).slice(2),
-    cardPool:CHAR_CARDS[c.name]||CHAR_CARDS["Jiyan"],
+    hand:[],   // 4 cards: 3 basics + variety (drawn fresh each round)
     committed:[]};
 }
 
+// Draw a fresh 4-card hand for a fighter (3 basics + variety fixed in slot 4)
+// Max 2 duplicates. Called at battle start and at each newRound.
+function refreshHand(f){
+  f.hand = drawHand(f).map(c=>({
+    ...c,
+    ownerId:f.id,
+    ownerName:f.name,
+    hid:'h'+Math.random().toString(36).slice(2)
+  }));
+}
+
 function calcFirstTurn(){
+  // First turn balance: lower DEF team gets Guard (shield bonus), both start with 3 energy
   const pd=G.player.reduce((s,f)=>s+f.def,0);
   const ed=G.enemy.reduce((s,f)=>s+f.def,0);
   if(pd<=ed){
-    G.energy=2; G.botEnergy=3;
     G.enemy.forEach(f=>f.guard=true);
   } else {
-    G.energy=3;
     G.player.forEach(f=>f.guard=true);
-    G.botEnergy=2;
   }
+  G.energy=3; G.botEnergy=3;
   G.startEnergy=G.energy;
   G.botStartEnergy=G.botEnergy;
-  if(G.mode==='pvp'){G.p2energy=G.botEnergy;}
+  if(G.mode==='pvp'){G.p2energy=3;}
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -74,42 +74,30 @@ function startBattle(mode){
   const used=new Set(pt.map(r=>r.name));
   const et=pickBalancedTeam(all.filter(r=>!used.has(r.name)));
   G={player:pt.map(makeFighter),enemy:et.map(makeFighter),
-    energy:10,maxE:10,botEnergy:0,round:1,phase:'commit',hand:[],done:false,_passing:false,escalation:1,
-    mode:mode||'bot', pvpTurn:'p1', p2hand:[]};
+    energy:3,maxE:3,botEnergy:3,round:1,phase:'commit',done:false,_passing:false,escalation:1,
+    mode:mode||'bot', pvpTurn:'p1'};
   calcFirstTurn();
-  // Initial hand deal for player
-  G.player.forEach(f=>buildLimitedHand(f.cardPool).slice(0,2).forEach(c=>{
-    if(G.hand.length>=14)return;
-    if(c.ult && G.hand.some(h=>h.ownerId===f.id&&h.ult)) return;
-    if(c.variety && G.hand.some(h=>h.ownerId===f.id&&h.variety&&h.n===c.n)) return;
-    G.hand.push({...c,ownerId:f.id,ownerName:f.name,hid:'h'+Math.random().toString(36).slice(2)});
-  }));
-  // PvP: also deal initial hand for P2 (enemy team)
-  if(mode==='pvp'){
-    G.enemy.forEach(f=>buildLimitedHand(f.cardPool).slice(0,2).forEach(c=>{
-      if(G.p2hand.length>=14)return;
-      if(c.ult && G.p2hand.some(h=>h.ownerId===f.id&&h.ult)) return;
-      if(c.variety && G.p2hand.some(h=>h.ownerId===f.id&&h.variety&&h.n===c.n)) return;
-      G.p2hand.push({...c,ownerId:f.id,ownerName:f.name,hid:'h'+Math.random().toString(36).slice(2)});
-    }));
-  }
+  // Draw fresh hand for every fighter
+  G.player.forEach(f=>refreshHand(f));
+  G.enemy.forEach(f=>refreshHand(f));
   showScreen('battleScreen');
   renderAll();
   if(mode==='pvp'){
-    // Show round 1 P1 start overlay
     showPvpP1StartOverlay();
   }
 }
 
-function drawForFighter(f,n=1,isP2=false){
-  const hand=isP2?G.p2hand:G.hand;
-  if(hand.length>=14)return;
-  shuf(buildLimitedHand(f.cardPool)).slice(0,n).forEach(c=>{
-    if(hand.length>=14)return;
-    if(c.ult && hand.some(h=>h.ownerId===f.id&&h.ult)) return;
-    if(c.variety && hand.some(h=>h.ownerId===f.id&&h.variety&&h.n===c.n)) return;
-    hand.push({...c,ownerId:f.id,ownerName:f.name,hid:'h'+Math.random().toString(36).slice(2)});
-  });
+// Discard a card from hand — costs 1 energy (same as playing)
+function discardCard(fid, hid){
+  if(G.phase!=='commit'||G.done) return;
+  if(G.energy<=0) return;
+  const f = G.player.find(x=>x.id===fid);
+  if(!f||!f.alive) return;
+  const idx = f.hand.findIndex(c=>c.hid===hid);
+  if(idx===-1) return;
+  f.hand.splice(idx,1);
+  G.energy--;
+  renderAll();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -154,15 +142,16 @@ function passRound(){
   if(G.phase!=='commit'||G.done) return;
   const isP2=G.mode==='pvp'&&G.pvpTurn==='p2';
   const team=isP2?G.enemy:G.player;
-  const hand=isP2?G.p2hand:G.hand;
   team.forEach(f=>{
     f.committed.forEach(card=>{
-      if(isP2) G.botEnergy+=card.c; else G.energy+=card.c;
-      hand.push({...card,hid:'h'+Math.random().toString(36).slice(2)});
+      // Restore energy for uncommitted cards
+      if(isP2) G.botEnergy=Math.min(3,G.botEnergy+1);
+      else G.energy=Math.min(3,G.energy+1);
+      // Return card to hand
+      f.hand.push({...card,hid:'h'+Math.random().toString(36).slice(2)});
     });
     f.committed=[];
   });
-  if(isP2){G.p2hand=[...hand]; /* already mutated */}
   G._passing=true;
   commitRound();
 }
@@ -236,40 +225,64 @@ function pvpContinue(){
 
 // ═══════════════════════════════════════════════════════════
 // BOT AI (buildBotActs)
-// Distributes bot energy per fighter by role priority:
-// supports prefer heal/buff/defend; DPS prefer attack/debuff
+// Bot draws same hand as player (4 cards: 3 basics + variety)
+// Follows same rules: 3 energy max, all cards cost 1
+// Role-aware: support heals/shields, dps/subdps attack/disrupt
 // ═══════════════════════════════════════════════════════════
 function buildBotActs(){
   const aliveEnemies=G.enemy.filter(f=>f.alive);
   let remainingEnergy=G.botEnergy;
-  const perFighter=Math.floor(remainingEnergy/Math.max(1,aliveEnemies.length));
   const acts=[];
+  // Distribute energy evenly across alive fighters
+  const perFighter=Math.floor(remainingEnergy/Math.max(1,aliveEnemies.length));
+
   for(const f of aliveEnemies){
     let budget=Math.min(perFighter,remainingEnergy);
-    let cards=[];
     if(budget<=0){f.committed=[];acts.push({fighter:f,side:'enemy'});continue;}
-    const botHand=shuf([...f.cardPool]);
-    for(const c of botHand){
-      if(budget<c.c)continue;
+
+    // Bot picks from its own drawn hand (same 4 cards as player would have)
+    const available=shuf([...f.hand]);
+    const chosen=[];
+
+    for(const card of available){
+      if(budget<=0||chosen.length>=3) break;
+      if(card.c>budget) continue; // can't afford (all cost 1 so this is rarely an issue)
+
+      // Role-aware selection
       if(f.role==='support'){
-        if(f.hp<f.maxHp*0.5&&(c.t==='defend'||c.t==='heal')){cards.push(c);budget-=c.c;}
-        else if(c.t==='buff'||c.t==='heal'||c.t==='defend'){cards.push(c);budget-=c.c;}
+        // Support: prefer heal/shield skills, pick anything if nothing better
+        const isDefensive = card.skill && (
+          card.skill.includes('Heal') || card.skill.includes('heal') ||
+          card.skill.includes('shield') || card.skill.includes('Shield') ||
+          card.skill.includes('DEF') || card.skill.includes('def')
+        );
+        if(isDefensive || f.hp < f.maxHp*0.5 || chosen.length===0){
+          chosen.push(card); budget--;
+        }
+      } else if(f.role==='subdps'){
+        // SubDPS: prefer disrupt/debuff/energy drain cards, then anything
+        const isDisruptive = card.skill && (
+          card.skill.includes('Disable') || card.skill.includes('Steal') ||
+          card.skill.includes('Remove') || card.skill.includes('debuff') ||
+          card.skill.includes('Destroy')
+        );
+        if(isDisruptive || chosen.length===0 || card.variety){
+          chosen.push(card); budget--;
+        }
       } else {
-        if(c.t==='attack'||c.t==='debuff'){cards.push(c);budget-=c.c;}
-        else if(c.t==='buff'&&!cards.some(x=>x.t==='buff')){cards.push(c);budget-=c.c;}
+        // DPS: prefer high-v damage cards, always pick something
+        chosen.push(card); budget--;
       }
-      if(budget<=0||cards.length>=3)break;
     }
-    // fallback: pick cheapest affordable card if nothing was chosen
-    if(!cards.length){
-      const affordable=f.cardPool.filter(c=>c.c<=Math.min(perFighter,remainingEnergy));
-      if(affordable.length)cards=[pick(affordable)];
+
+    // Fallback: if nothing chosen, just pick up to budget cards randomly
+    if(!chosen.length){
+      available.slice(0,budget).forEach(c=>{chosen.push(c);});
     }
-    // deduct actual cost of chosen cards from remaining pool
-    const spent=cards.reduce((s,c)=>s+c.c,0);
-    remainingEnergy-=spent;
-    G.botEnergy-=spent;
-    f.committed=cards;
+
+    remainingEnergy -= chosen.length;
+    G.botEnergy -= chosen.length;
+    f.committed = chosen;
     acts.push({fighter:f,side:'enemy'});
   }
   return acts;
