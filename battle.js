@@ -67,7 +67,7 @@ function startBattle(mode){
   G={player:pFighters,enemy:eFighters,
     playerDeck:pDeck,enemyDeck:eDeck,
     playerHand:pHand,enemyHand:eHand,
-    energy:3,maxE:3,botEnergy:3,round:1,phase:'commit',done:false,_passing:false,escalation:1,
+    energy:3,maxE:10,botEnergy:3,round:1,phase:'commit',done:false,_passing:false,escalation:1,
     mode:mode||'bot',pvpTurn:'p1'};
   calcFirstTurn();
   showScreen('battleScreen');
@@ -141,8 +141,8 @@ function passRound(){
   const hand=isP2?G.enemyHand:G.playerHand;
   team.forEach(f=>{
     f.committed.forEach(card=>{
-      if(isP2) G.botEnergy=Math.min(3,G.botEnergy+1);
-      else G.energy=Math.min(3,G.energy+1);
+      if(isP2) G.botEnergy=Math.min(G.maxE,G.botEnergy+1);
+      else G.energy=Math.min(G.maxE,G.energy+1);
       hand.push({...card,hid:'h'+Math.random().toString(36).slice(2)});
     });
     f.committed=[];
@@ -185,6 +185,11 @@ function commitRound(){
   }
   G._passing=false;
   G.phase='resolve';
+  // Overdrive: spent all energy → team gets +10% damage this round
+  const playerOD=G.startEnergy>=G.maxE&&G.energy===0;
+  const botOD=G.botStartEnergy>=G.maxE&&G.botEnergy===0;
+  if(playerOD)G.player.filter(f=>f.alive).forEach(f=>{f.overdrive=true;floatDmg(f.id,'⚡ OVERDRIVE!','overdrive');});
+  if(botOD)G.enemy.filter(f=>f.alive).forEach(f=>{f.overdrive=true;});
   applyPassiveShields(G.player.filter(f=>f.alive&&f.committed.length>0));
   applyPassiveShields(G.enemy.filter(f=>f.alive&&f.committed.length>0));
   renderAll();

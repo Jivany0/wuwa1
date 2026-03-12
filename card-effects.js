@@ -575,8 +575,7 @@ function r2_blazingGale(player,enemy){
   const others=enemy.filter(f=>f.id!==main.id&&f.alive);
   const splash=others.length?pick(others):null;
   if(splash){
-    const baseDmg=Math.round(G.player.filter(f=>f.alive).reduce((s,f)=>s+f.atk,0)/G.player.filter(f=>f.alive).length*0.3);
-    rxDmg(splash,baseDmg,'Fusion');
+    rxDmg(splash,30,'Fusion');
     floatDmg(splash.id,'🌪️SPLASH','debuff');
   }
 }
@@ -590,8 +589,7 @@ function r2_plasmaIgnition(player,enemy){
   const others=enemy.filter(f=>f.id!==main.id&&f.alive);
   if(others.length){
     const chain=pick(others);
-    const baseDmg=Math.round(G.player.filter(f=>f.alive).reduce((s,f)=>s+f.atk,0)/G.player.filter(f=>f.alive).length*.50);
-    rxDmg(chain,baseDmg,'Electro');
+    rxDmg(chain,50,'Electro');
     floatDmg(chain.id,'⚡CHAIN','debuff');
   }
 }
@@ -635,18 +633,14 @@ function r2_crystalPrism(player,enemy){
   updateFighterDOM(t);
 }
 function r2_resonantPulse(player,enemy){
-  const playerDps=G.player.filter(f=>f.alive).sort((a,b)=>b.atk-a.atk)[0];
-  const splashDmg=Math.round((playerDps?playerDps.atk:50)*.20);
-  enemy.forEach(t=>{rxDmg(t,splashDmg,'Spectro');floatDmg(t.id,'🌟SHOCKWAVE','debuff');});
+  enemy.forEach(t=>{rxDmg(t,25,'Spectro');floatDmg(t.id,'🌟SHOCKWAVE','debuff');});
 }
 function r2_frostTempest(player,enemy){
   G._slowDrawNext=(G._slowDrawNext||0)+1;
   showCombo('❄️🌊 SLOW — Enemy draws 1 fewer next round!');
 }
 function r2_thunderSquall(player,enemy){
-  const playerDps=G.player.filter(f=>f.alive).sort((a,b)=>b.atk-a.atk)[0];
-  const dmg=Math.round((playerDps?playerDps.atk:50)*.40);
-  enemy.forEach(t=>{rxDmg(t,dmg,'Electro');floatDmg(t.id,'⚡SQUALL','debuff');});
+  enemy.forEach(t=>{rxDmg(t,45,'Electro');floatDmg(t.id,'⚡SQUALL','debuff');});
 }
 function r2_glacialArc(player,enemy){
   const t=rxTarget(enemy,rxPickBy());if(!t)return;
@@ -665,9 +659,7 @@ function r3_ashenRevelation(player,enemy){
   });
 }
 function r3_infernalVortex(player,enemy){
-  const dps=G.player.filter(f=>f.alive).sort((a,b)=>b.atk-a.atk)[0];
-  const dmg=Math.round((dps?dps.atk:60)*.60);
-  enemy.forEach(t=>{rxDmg(t,dmg,'Fusion');floatDmg(t.id,'🔥💜🌊 VORTEX','ult');});
+  enemy.forEach(t=>{rxDmg(t,70,'Fusion');floatDmg(t.id,'🔥💜🌊 VORTEX','ult');});
 }
 function r3_ruinousBlizzard(player,enemy){
   enemy.forEach(t=>{
@@ -696,10 +688,8 @@ function r3_auroraBurst(player,enemy){
   showCombo('🔥🌟❄️ AURORA BURST! +50% Team DMG this round!');
 }
 function r3_stellarIgnition(player,enemy){
-  const highest=G.player.filter(f=>f.alive).sort((a,b)=>b.atk-a.atk)[0];
-  const dmg=Math.round((highest?highest.atk:60)*.80);
   enemy.forEach(t=>{
-    const raw=dmg;
+    const raw=80;
     const absorbed=Math.min(t.shield,raw);t.shield-=absorbed;
     const actual=raw-absorbed;
     t.hp=Math.max(0,t.hp-actual);
@@ -745,9 +735,7 @@ function r3_cursedTundra(player,enemy){
   G._slowDrawNext=(G._slowDrawNext||0)+1;
 }
 function r3_abyssalThunder(player,enemy){
-  const sub=G.player.filter(f=>f.alive&&f.role==='subdps').sort((a,b)=>b.atk-a.atk)[0]||G.player.filter(f=>f.alive)[0];
-  const dmg=Math.round((sub?sub.atk:50)*.50);
-  enemy.forEach(t=>{rxDmg(t,dmg,'Electro');floatDmg(t.id,'💜⚡ABYSSAL','ult');});
+  enemy.forEach(t=>{rxDmg(t,60,'Electro');floatDmg(t.id,'💜⚡ABYSSAL','ult');});
 }
 function r3_eternalRuin(player,enemy){
   if(!enemy.length)return;
@@ -767,10 +755,8 @@ function r3_borealRadiance(player,enemy){
   }
 }
 function r3_stormlightPulse(player,enemy){
-  const highest=G.player.filter(f=>f.alive).sort((a,b)=>b.atk-a.atk)[0];
-  const dmg=Math.round((highest?highest.atk:60)*.50);
   enemy.forEach(t=>{
-    const actual=dmg;
+    const actual=55;
     t.hp=Math.max(0,t.hp-actual);
     if(t.hp<=0)t.alive=false;
     floatDmg(t.id,`-${actual}🌟⚡PULSE`,'ult');
@@ -784,11 +770,8 @@ function r3_prismaticDischarge(player,enemy){
   }
 }
 function r3_polarThunderstorm(player,enemy){
-  const alive=G.player.filter(f=>f.alive);
-  const avgAtk=alive.reduce((s,f)=>s+f.atk,0)/Math.max(alive.length,1);
-  const dmg=Math.round(avgAtk*.70);
-  enemy.forEach(t=>{rxDmg(t,dmg,'Electro');floatDmg(t.id,'🌊❄️⚡POLAR','ult');});
-  G.player.filter(f=>f.alive).forEach(f=>{f.shield+=Math.round(f.def*.20);floatDmg(f.id,'+DEF🌊','buff');updateFighterDOM(f);});
+  enemy.forEach(t=>{rxDmg(t,75,'Electro');floatDmg(t.id,'🌊❄️⚡POLAR','ult');});
+  G.player.filter(f=>f.alive).forEach(f=>{f.shield+=20;floatDmg(f.id,'+20🛡️🌊','buff');updateFighterDOM(f);});
 }
 
 let comboTimeout=null;

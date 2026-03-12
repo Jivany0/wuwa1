@@ -82,18 +82,20 @@ function executeAct(act,combos={}){
   const owner=allies.find(x=>x.id===f.id);
   if(!owner||!owner.alive)return;
   const comboMult=combos[owner.id]||1;
+  const odMult=owner.overdrive?1.10:1.0;
 
   // All committed cards execute in order
   owner.committed.forEach((card,ci)=>{
     setTimeout(()=>{
       if(!owner.alive)return;
+      if(card._disabled)return; // jammed/blocked
       animF(owner.id,'attacking-anim');
       const aliveFoes=foes.filter(r=>r.alive);
       const aliveAllies=allies.filter(r=>r.alive);
 
       // ── Variety cards → delegate to applyVarietyVfx unchanged ──
       if(card.variety&&card.vfx&&card.vfx!=='none'){
-        const raw=Math.round((card.v||0)*(owner.atkMult||1)*(owner.atk/70)*comboMult*(G._teamDmgMult||1)*(G._phantomRift?1.30:1.0));
+        const raw=Math.round((card.v||0)*(owner.atkMult||1)*comboMult*odMult*(G._teamDmgMult||1)*(G._phantomRift?1.30:1.0));
         playSound('attack');
         flyCard(card,owner.id,owner.id,()=>{applyVarietyVfx(card,owner,allies,foes,raw);});
         return;
@@ -113,7 +115,7 @@ function executeAct(act,combos={}){
       if(baseV > 0 && !skipDmg && aliveFoes.length){
         const target = targetOverride || pickTarget(aliveFoes, owner.role, 'attack');
         const raw = Math.round(
-          baseV * (owner.atkMult||1) * (owner.atk/70) * comboMult * dmgMult *
+          baseV * (owner.atkMult||1) * comboMult * dmgMult * odMult *
           (G._teamDmgMult||1) * (G._phantomRift?1.30:1.0)
         );
         const defIgnore = G._phantomRift ? 0.50 : 0;
@@ -139,6 +141,7 @@ function executeAct(act,combos={}){
         const sh = Math.round(baseShield * (extraShieldMult||1));
         owner.shield = (owner.shield||0) + sh;
         playSound('defend');
+        fireBuff(owner.id,owner.id,'🛡️');
         flyCard(card,owner.id,owner.id,()=>{
           animF(owner.id,'healing-anim');
           floatDmg(owner.id,`+${sh}🛡️`,'buff');
@@ -151,6 +154,7 @@ function executeAct(act,combos={}){
         const target = aliveAllies.filter(a=>a.id!==owner.id).sort((a,b)=>(a.hp/a.maxHp)-(b.hp/b.maxHp))[0] || owner;
         target.hp = Math.min(target.maxHp, target.hp + healAmt);
         playSound('heal');
+        fireHeal(owner.id,target.id);
         flyCard(card,owner.id,target.id,()=>{
           animF(target.id,'healing-anim');
           floatDmg(target.id,`+${healAmt}💚`,'heal');
@@ -389,14 +393,14 @@ function applyUtilitySkill(card, owner, aliveFoes, aliveAllies, isPlayer){
 
   // Debuffs
   if(sk.includes('Apply -20% damage debuff')){
-    aliveFoes.forEach(t=>{ t._dmgReduced=(t._dmgReduced||0)+0.20; floatDmg(t.id,'⬇️-20%DMG','debuff'); updateFighterDOM(t); });
+    aliveFoes.forEach(t=>{ t._dmgReduced=(t._dmgReduced||0)+0.20; fireDebuff(owner.id,t.id); floatDmg(t.id,'⬇️-20%DMG','debuff'); updateFighterDOM(t); });
   }
   if(sk.includes('Apply -40% heal debuff')){
-    aliveFoes.forEach(t=>{ t._healDebuff=(t._healDebuff||0)+0.40; t._healDebuffRounds=2; floatDmg(t.id,'⬇️-40%HEAL','debuff'); updateFighterDOM(t); });
+    aliveFoes.forEach(t=>{ t._healDebuff=(t._healDebuff||0)+0.40; t._healDebuffRounds=2; fireDebuff(owner.id,t.id); floatDmg(t.id,'⬇️-40%HEAL','debuff'); updateFighterDOM(t); });
   }
   if(sk.includes('Target reduces incoming heal')){
     const t = aliveFoes.length ? pickTarget(aliveFoes,owner.role,'debuff') : null;
-    if(t){ t._healDebuff=(t._healDebuff||0)+0.50; t._healDebuffRounds=2; floatDmg(t.id,'🚫-50%HEAL','debuff'); updateFighterDOM(t); }
+    if(t){ t._healDebuff=(t._healDebuff||0)+0.50; t._healDebuffRounds=2; fireDebuff(owner.id,t.id); floatDmg(t.id,'🚫-50%HEAL','debuff'); updateFighterDOM(t); }
   }
   if(sk.includes('Transfer all debuffs')){
     const t = aliveFoes.length ? pickTarget(aliveFoes,owner.role,'attack') : null;
@@ -405,6 +409,7 @@ function applyUtilitySkill(card, owner, aliveFoes, aliveAllies, isPlayer){
       t.atkDebuffAmount=(t.atkDebuffAmount||0)+(owner.atkDebuffAmount||0);
       t.atk=Math.max(1,t.atk-(owner.atkDebuffAmount||0));
       owner.debuffRounds=0; owner.atkDebuffAmount=0;
+      fireDebuff(owner.id,t.id);
       floatDmg(owner.id,'☠️Debuff Transferred!','buff'); floatDmg(t.id,'☠️Debuff Received!','debuff');
       updateFighterDOM(owner); updateFighterDOM(t);
     }
@@ -413,20 +418,20 @@ function applyUtilitySkill(card, owner, aliveFoes, aliveAllies, isPlayer){
   // Disruption
   if(sk.includes('Remove the first committed card')){
     const t = aliveFoes.length ? pickTarget(aliveFoes,owner.role,'attack') : null;
-    if(t && t.committed && t.committed.length){ t.committed.splice(0,1); floatDmg(t.id,'✂️Card Removed!','debuff'); updateFighterDOM(t); }
+    if(t && t.committed && t.committed.length){ t.committed.splice(0,1); fireDebuff(owner.id,t.id); floatDmg(t.id,'✂️Card Removed!','debuff'); updateFighterDOM(t); }
   }
   if(sk.includes('Disable 1 card of the enemy')){
     const t = aliveFoes.length ? pickTarget(aliveFoes,owner.role,'attack') : null;
     if(t && t.committed && t.committed.length){
       const idx = Math.floor(Math.random()*t.committed.length);
       t.committed[idx]._disabled=true;
-      floatDmg(t.id,'📡Card Jammed!','debuff'); updateFighterDOM(t);
+      fireDebuff(owner.id,t.id); floatDmg(t.id,'📡Card Jammed!','debuff'); updateFighterDOM(t);
     }
   }
   if(sk.includes('Disable enemy heal card')){
     aliveFoes.forEach(t=>{
       const healCard = t.committed.find(c=>c.skill&&(c.skill.includes('Heal')||c.skill.includes('heal')));
-      if(healCard){ healCard._disabled=true; floatDmg(t.id,'🔒Heal Blocked!','debuff'); updateFighterDOM(t); }
+      if(healCard){ healCard._disabled=true; fireDebuff(owner.id,t.id); floatDmg(t.id,'🔒Heal Blocked!','debuff'); updateFighterDOM(t); }
     });
   }
   if(sk.includes('Randomly discard an enemy card') && sk.includes('comboed by 2')){
@@ -435,64 +440,66 @@ function applyUtilitySkill(card, owner, aliveFoes, aliveAllies, isPlayer){
       if(t && t.committed && t.committed.length){
         const idx = Math.floor(Math.random()*t.committed.length);
         t.committed.splice(idx,1);
-        floatDmg(t.id,'🎲Card Discarded!','debuff'); updateFighterDOM(t);
+        fireDebuff(owner.id,t.id); floatDmg(t.id,'🎲Card Discarded!','debuff'); updateFighterDOM(t);
       }
     }
   }
 
   // Buffs / team effects
   if(sk.includes('+10% ATK to the whole team')){
-    aliveAllies.forEach(a=>{ a.atkMult=Math.min(2.5,(a.atkMult||1)+0.10); a.buffRounds=1; floatDmg(a.id,'+10%ATK📯','buff'); updateFighterDOM(a); });
+    aliveAllies.forEach(a=>{ a.atkMult=Math.min(2.5,(a.atkMult||1)+0.10); a.buffRounds=1; fireBuff(owner.id,a.id,'⬆️'); floatDmg(a.id,'+10%ATK📯','buff'); updateFighterDOM(a); });
   }
   if(sk.includes('Remove all debuffs')){
     owner.debuffRounds=0; owner.atkDebuffAmount=0; owner.atk=owner.atk+(owner.atkDebuffAmount||0);
-    floatDmg(owner.id,'✨Cleansed!','buff'); updateFighterDOM(owner);
+    fireBuff(owner.id,owner.id,'✨'); floatDmg(owner.id,'✨Cleansed!','buff'); updateFighterDOM(owner);
   }
 
   // Taunt effects
   if(sk.includes('Taunt all DPS attacks') && sk.includes('15%')){
     owner._taunt='dps'; owner._tauntDmgReduce=0.15;
-    floatDmg(owner.id,'🛡️TAUNT ALL DPS','buff'); updateFighterDOM(owner);
+    fireBuff(owner.id,owner.id,'🛡️'); floatDmg(owner.id,'🛡️TAUNT ALL DPS','buff'); updateFighterDOM(owner);
   }
-  if(sk.includes('Taunts enemy DPS attacks') && !sk.includes('all')){
+  if((sk.includes('Taunt enemy DPS attacks')||sk.includes('Taunts enemy DPS attacks'))&&!sk.includes('all')){
     owner._taunt='dps';
-    floatDmg(owner.id,'📣TAUNT DPS','buff'); updateFighterDOM(owner);
+    fireBuff(owner.id,owner.id,'📣'); floatDmg(owner.id,'📣TAUNT DPS','buff'); updateFighterDOM(owner);
   }
   if(sk.includes('Taunt the next round')){
     owner._tauntNextRound=true;
-    floatDmg(owner.id,'📣TAUNT NXT RND','buff'); updateFighterDOM(owner);
+    fireBuff(owner.id,owner.id,'📣'); floatDmg(owner.id,'📣TAUNT NXT RND','buff'); updateFighterDOM(owner);
   }
 
   // Defensive self effects
   if(sk.includes('can\'t take critical damage')){
     owner._noCrit=true;
-    floatDmg(owner.id,'🛡️No Crit!','buff'); updateFighterDOM(owner);
+    fireBuff(owner.id,owner.id,'🛡️'); floatDmg(owner.id,'🛡️No Crit!','buff'); updateFighterDOM(owner);
   }
   if(sk.includes('DEF next round doubled')){
     owner._doubleDefNextRound=true;
-    floatDmg(owner.id,'🏰DEF×2 NXT','buff'); updateFighterDOM(owner);
+    fireBuff(owner.id,owner.id,'🏰'); floatDmg(owner.id,'🏰DEF×2 NXT','buff'); updateFighterDOM(owner);
   }
   if(sk.includes('Reduce damage taken by 20%')){
     owner._dmgTakenReduce=(owner._dmgTakenReduce||0)+0.20;
-    floatDmg(owner.id,'🌫️-20%DMG','buff'); updateFighterDOM(owner);
+    fireBuff(owner.id,owner.id,'🌫️'); floatDmg(owner.id,'🌫️-20%DMG','buff'); updateFighterDOM(owner);
   }
   if(sk.includes('Block one incoming attack')){
     owner._blockNext=true;
-    floatDmg(owner.id,'🌀BLOCK','buff'); updateFighterDOM(owner);
+    fireBuff(owner.id,owner.id,'🌀'); floatDmg(owner.id,'🌀BLOCK','buff'); updateFighterDOM(owner);
   }
   if(sk.includes('Reflect 30% damage') && sk.includes('below 30%')){
-    if(owner.hp/owner.maxHp < 0.30){ owner._reflect=0.30; floatDmg(owner.id,'🌹THORNS 30%','buff'); updateFighterDOM(owner); }
+    if(owner.hp/owner.maxHp < 0.30){ owner._reflect=0.30; fireBuff(owner.id,owner.id,'🌹'); floatDmg(owner.id,'🌹THORNS 30%','buff'); updateFighterDOM(owner); }
   }
 
   // Draw effects
   if(sk.includes('Draw a card') && sk.includes('attacked first') && owner._attackedFirst){
-    const extra = drawHand(owner).slice(0,1).map(c=>({...c,ownerId:owner.id,ownerName:owner.name,hid:'h'+Math.random().toString(36).slice(2)}));
-    owner.hand.push(...extra);
+    const _isEnemy=G.enemy.some(e=>e.id===owner.id);
+    const _hand=_isEnemy?G.enemyHand:G.playerHand;
+    if(_hand.length<9){const _xc=shuf([...(owner.lockedCards||[])]).slice(0,1);_xc.forEach(xc=>_hand.push({...xc,ownerId:owner.id,ownerName:owner.name,hid:'h'+Math.random().toString(36).slice(2)}));floatDmg(owner.id,'🃏+1 Card','buff');}
     floatDmg(owner.id,'🃏+1 Card','buff');
   }
   if(sk.includes('Draw a card') && sk.includes('shield didn\'t break') && !owner._shieldBrokeThisRound && owner.shield > 0){
-    const extra = drawHand(owner).slice(0,1).map(c=>({...c,ownerId:owner.id,ownerName:owner.name,hid:'h'+Math.random().toString(36).slice(2)}));
-    owner.hand.push(...extra);
+    const _isEnemy=G.enemy.some(e=>e.id===owner.id);
+    const _hand=_isEnemy?G.enemyHand:G.playerHand;
+    if(_hand.length<9){const _xc=shuf([...(owner.lockedCards||[])]).slice(0,1);_xc.forEach(xc=>_hand.push({...xc,ownerId:owner.id,ownerName:owner.name,hid:'h'+Math.random().toString(36).slice(2)}));floatDmg(owner.id,'🃏+1 Card','buff');}
     floatDmg(owner.id,'🃏+1 Card','buff');
   }
 
@@ -504,8 +511,8 @@ function applyUtilitySkill(card, owner, aliveFoes, aliveAllies, isPlayer){
     owner._energyGainAt50=true;
   }
   if(sk.includes('Gain 1 energy if this card is active and attacking')){
-    if(isPlayer) G.energy=Math.min(3,G.energy+1);
-    else G.botEnergy=Math.min(3,G.botEnergy+1);
+    if(isPlayer) G.energy=Math.min(G.maxE,G.energy+1);
+    else G.botEnergy=Math.min(G.maxE,G.botEnergy+1);
     floatDmg(owner.id,'⚡+1 EN','buff');
   }
   if(sk.includes('Gain 1 energy if this resonator\'s shield breaks')){
@@ -517,9 +524,9 @@ function applyUtilitySkill(card, owner, aliveFoes, aliveAllies, isPlayer){
     owner._tripleHit=false;
     const t = aliveFoes.length ? pickTarget(aliveFoes,owner.role,'attack') : null;
     if(t){
-      const raw = Math.round((card.v||35)*(owner.atkMult||1)*(owner.atk/70)*(G._teamDmgMult||1));
+      const raw = Math.round((card.v||35)*(owner.atkMult||1)*(G._teamDmgMult||1));
       [0,1,2].forEach(i=>{
-        const res=dealDmgEx(t,Math.round(raw/3),owner.el,0);
+        const res=dealDmgEx(t,Math.round(raw/3),owner.el,0,owner);
         if(t.alive) floatDmg(t.id,`-${res.dmg}⚡`,'dmg');
         updateFighterDOM(t);
       });
@@ -541,22 +548,77 @@ function pickTarget(foes,role,cardType){
   }
 }
 
-function dealDmgEx(target,raw,atkEl,defIgnore=0){
-  const resist=(atkEl===target.el);
-  const resMult=resist?RESISTANCE:1.0;
-  const isCrit=Math.random()<0.015;
-  const critMult=isCrit?1.3:1.0;
-  const defReduction=target.def*(0.3*(1-defIgnore));
-  const guardBonus=target.guard?target.def*0.2:0;
-  let dmg=Math.max(1,Math.round(raw*resMult*critMult*G.escalation-defReduction-guardBonus));
+function dealDmgEx(target,raw,atkEl,defIgnore=0,attacker=null){
+  if(target._missChance>0&&Math.random()<target._missChance){
+    floatDmg(target.id,'MISS!','resist');
+    return{dmg:0,isCrit:false,resist:false,absorbed:0};
+  }
+  if(target._blockNext){
+    target._blockNext=false;
+    floatDmg(target.id,'🌀BLOCKED!','buff');
+    return{dmg:0,isCrit:false,resist:false,absorbed:0};
+  }
+  if(target._taunt==='dps'&&attacker&&attacker.role==='dps'&&target._tauntDmgReduce){
+    raw=Math.round(raw*(1-target._tauntDmgReduce));
+  }
+  const noCrit=target._noCrit||false;
+  const forceCrit=!!(attacker&&attacker._forceCrit);
+  const isCrit=!noCrit&&(forceCrit||Math.random()<0.15);
+  if(forceCrit&&attacker)attacker._forceCrit=false;
+  const critMult=isCrit?1.5:1.0;
+  const dmgReducedMult=1-Math.min(0.9,(target._dmgReduced||0)+(target._dmgTakenReduce||0));
+  const guardReduction=target.guard?0.15:0;
+  let dmg=Math.max(1,Math.round(raw*critMult*dmgReducedMult*(1-guardReduction)*G.escalation));
   let absorbed=0;
-  if(target.shield>0){absorbed=Math.min(target.shield,dmg);target.shield-=absorbed;dmg-=absorbed;}
+  if(target.shield>0){
+    absorbed=Math.min(target.shield,dmg);target.shield-=absorbed;dmg-=absorbed;
+    if(target.shield<=0){
+      target._shieldBrokeThisRound=true;
+      if(target._energyOnShieldBreak){
+        const isPlayerTarget=G.player.some(p=>p.id===target.id);
+        if(isPlayerTarget)G.energy=Math.min(G.maxE,G.energy+1);
+        else G.botEnergy=Math.min(G.maxE,G.botEnergy+1);
+        floatDmg(target.id,'⚡+1 EN','buff');
+        target._energyOnShieldBreak=false;
+      }
+    }
+  }
   target.hp=Math.max(0,target.hp-dmg);
   if(target.hp<=0)target.alive=false;
-  return{dmg,isCrit,resist,absorbed};
+  if(target._reflect&&attacker&&attacker.alive&&dmg>0){
+    const rd=Math.round(dmg*target._reflect);
+    attacker.hp=Math.max(0,attacker.hp-rd);
+    if(attacker.hp<=0)attacker.alive=false;
+    floatDmg(attacker.id,`🌹-${rd}REFLECT`,'debuff');
+    updateFighterDOM(attacker);
+  }
+  return{dmg,isCrit,resist:false,absorbed};
 }
 
-function dealDmg(target,raw,atkEl){return dealDmgEx(target,raw,atkEl,0);}
+function dealDmg(target,raw,atkEl,attacker=null){return dealDmgEx(target,raw,atkEl,0,attacker);}
+
+function refreshHand(f){
+  const isEnemy=G.enemy.some(e=>e.id===f.id);
+  const hand=isEnemy?G.enemyHand:G.playerHand;
+  const keep=hand.filter(c=>c.ownerId!==f.id);
+  hand.length=0;keep.forEach(c=>hand.push(c));
+  for(const card of (f.lockedCards||[])){
+    if(hand.length>=9)break;
+    hand.push({...card,ownerId:f.id,ownerName:f.name,hid:'h'+Math.random().toString(36).slice(2)});
+  }
+  const variety=CHAR_CARDS[f.name];
+  if(variety&&hand.length<9){
+    hand.push({...variety,variety:true,ownerId:f.id,ownerName:f.name,hid:'h'+Math.random().toString(36).slice(2)});
+  }
+}
+
+function highlightTarget(fid){
+  const el=document.getElementById('f-'+fid);if(!el)return;
+  const ring=document.createElement('div');ring.className='target-ring';
+  ring.innerHTML='<div class="target-ring-inner">🎯</div>';
+  el.style.position='relative';el.appendChild(ring);
+  setTimeout(()=>ring.remove(),600);
+}
 
 function newRound(){
   if(G.done)return;
@@ -631,11 +693,11 @@ function newRound(){
     G.escalation=+(G.escalation+0.10).toFixed(2);
     showCombo(`⚠️ Damage Escalation! ×${G.escalation.toFixed(1)}`);
   }
-  // 4.0: flat 3 energy per round, no carry over
-  G.energy=3;
-  G.botEnergy=3;
-  G.startEnergy=3;
-  G.botStartEnergy=3;
+  // Energy carries over +3 per round, capped at maxE
+  G.energy=Math.min(G.maxE,G.energy+3);
+  G.botEnergy=Math.min(G.maxE,G.botEnergy+3);
+  G.startEnergy=G.energy;
+  G.botStartEnergy=G.botEnergy;
   G.phase='commit';
   G.pvpTurn='p1';
   // Refresh hands for all alive fighters (fresh 4 cards each round)
@@ -679,6 +741,69 @@ function fireProj(fromId,toId,el,onHit){
   }));
   setTimeout(()=>{proj.style.opacity='0';proj.style.transform='translate(-50%,-50%) scale(2)';setTimeout(()=>proj.remove(),180);onHit();},370);
 }
+
+// ── Buff orb: golden shimmer traveling to target ──
+function fireBuff(fromId,toId,label,cb){
+  cb=cb||function(){};
+  const fe=document.getElementById('f-'+fromId),te=document.getElementById('f-'+toId);
+  if(!fe||!te){cb();return;}
+  const fr=fe.getBoundingClientRect(),tr=te.getBoundingClientRect();
+  const orb=document.createElement('div');orb.className='vfx-orb vfx-buff';
+  orb.innerHTML=`<div class="vfx-orb-inner">${label||'⬆️'}</div>`;
+  orb.style.left=(fr.left+fr.width/2)+'px';orb.style.top=(fr.top+fr.height/2)+'px';
+  document.getElementById('projLayer').appendChild(orb);
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    orb.style.left=(tr.left+tr.width/2)+'px';orb.style.top=(tr.top+tr.height/2)+'px';
+    orb.style.transform='translate(-50%,-50%) scale(1.2)';
+  }));
+  setTimeout(()=>{
+    orb.style.opacity='0';orb.style.transform='translate(-50%,-50%) scale(2.2)';
+    animF(toId,'buff-recv-anim');
+    setTimeout(()=>orb.remove(),200);cb();
+  },380);
+}
+
+// ── Heal pulse: green cross traveling to target ──
+function fireHeal(fromId,toId,cb){
+  cb=cb||function(){};
+  const fe=document.getElementById('f-'+fromId),te=document.getElementById('f-'+toId);
+  if(!fe||!te){cb();return;}
+  const fr=fe.getBoundingClientRect(),tr=te.getBoundingClientRect();
+  const orb=document.createElement('div');orb.className='vfx-orb vfx-heal';
+  orb.innerHTML=`<div class="vfx-orb-inner">💚</div>`;
+  orb.style.left=(fr.left+fr.width/2)+'px';orb.style.top=(fr.top+fr.height/2)+'px';
+  document.getElementById('projLayer').appendChild(orb);
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    orb.style.left=(tr.left+tr.width/2)+'px';orb.style.top=(tr.top+tr.height/2)+'px';
+    orb.style.transform='translate(-50%,-50%) scale(1.2)';
+  }));
+  setTimeout(()=>{
+    orb.style.opacity='0';orb.style.transform='translate(-50%,-50%) scale(2.5)';
+    animF(toId,'heal-recv-anim');
+    setTimeout(()=>orb.remove(),200);cb();
+  },380);
+}
+
+// ── Debuff bolt: purple spike toward target ──
+function fireDebuff(fromId,toId,cb){
+  cb=cb||function(){};
+  const fe=document.getElementById('f-'+fromId),te=document.getElementById('f-'+toId);
+  if(!fe||!te){cb();return;}
+  const fr=fe.getBoundingClientRect(),tr=te.getBoundingClientRect();
+  const orb=document.createElement('div');orb.className='vfx-orb vfx-debuff';
+  orb.innerHTML=`<div class="vfx-orb-inner">💜</div>`;
+  orb.style.left=(fr.left+fr.width/2)+'px';orb.style.top=(fr.top+fr.height/2)+'px';
+  document.getElementById('projLayer').appendChild(orb);
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    orb.style.left=(tr.left+tr.width/2)+'px';orb.style.top=(tr.top+tr.height/2)+'px';
+    orb.style.transform='translate(-50%,-50%) scale(1.2)';
+  }));
+  setTimeout(()=>{
+    orb.style.opacity='0';orb.style.transform='translate(-50%,-50%) scale(2.2)';
+    animF(toId,'debuff-recv-anim');
+    setTimeout(()=>orb.remove(),200);cb();
+  },380);
+}
 function floatDmg(fid,val,cls){
   const el=document.getElementById('f-'+fid);if(!el)return;
   const d=document.createElement('div');d.className=`dmg-float ${cls}`;d.textContent=val;
@@ -693,45 +818,38 @@ function showPeek(fid,e){
   if(e)e.stopPropagation();
   const f=G.player.find(x=>x.id===fid)||G.enemy.find(x=>x.id===fid);if(!f)return;
   const isPlayerFighter=G.player.some(x=>x.id===fid);
-  const sharedHand=(isPlayerFighter?G.playerHand:G.enemyHand)||[];
-  const sharedDeck=(isPlayerFighter?G.playerDeck:G.enemyDeck)||[];
-  const boxCol=`var(${EL_VAR[f.el]||'--Physical'})`;
-  const side=isPlayerFighter?'YOUR':'ENEMY';
-
-  // Show the fighter's 3 locked cards + their variety card
-  const lockedCards=f.lockedCards||[];
-  const variety=CHAR_CARDS[f.name];
-  const allCards=[...lockedCards,...(variety?[{...variety,variety:true}]:[])];
-
-  const html=allCards.map(c=>{
-    const isVariety=c.variety;
-    const val=c.v?`⚔️${c.v}`:(c.shield?`🛡️${c.shield}`:'');
+  const pvp=G.mode==='pvp';
+  const isActivePlayer = !pvp
+    || (G.pvpTurn==='p1' && isPlayerFighter)
+    || (G.pvpTurn==='p2' && !isPlayerFighter)
+    || G.phase==='resolve';
+  document.getElementById('peekTitle').textContent=`${f.emoji} ${f.name} · ${isActivePlayer?'Your':'Enemy'} Cards`;
+  document.getElementById('peekCards').innerHTML=f.cardPool.map(c=>{
+    const tc=typeCol(c.t);
+    const val=c.t==='buff'?`+${Math.round((c.bv||0)*100)}%ATK`:c.t==='debuff'?`⬇️${Math.round((c.dv||0.20)*100)}%ATK`:c.v?`${c.t==='attack'?'⚔️':'💚'}${c.v}`:'';
     const desc=cardDesc(c,f.role);
-
-    // Status: queued → in hand → in deck → used (not in any)
-    const inCommitted=f.committed.some(h=>h.n===c.n);
-    const inHand=sharedHand.some(h=>h.ownerId===f.id&&h.n===c.n);
-    const inDeck=sharedDeck.some(h=>h.ownerId===f.id&&h.n===c.n);
-    const status=inCommitted?'QUEUED':inHand?'IN HAND':inDeck?'IN DECK':'USED';
-    const statusStyle=inCommitted?'color:var(--gold);font-weight:700':inHand?'color:var(--green)':inDeck?'color:var(--blue)':'color:var(--dim)';
-
-    return`<div class="peek-card${isVariety?' peek-card-variety':''}">
-      <div class="peek-card-cost${c.c===0?' free-cost':''}">${c.c===0?'F':c.c}</div>
-      <div class="peek-card-ic">${c.ic}</div>
-      <div class="peek-card-nm">${c.n}</div>
-      <div class="peek-card-tp" style="color:${isVariety?'var(--gold)':'var(--dim2)'}">${isVariety?'✦VAR':'SKL'}</div>
-      ${val?`<div class="peek-card-vl">${val}</div>`:''}
-      ${desc?`<div class="peek-card-desc">${desc}</div>`:''}
-      <div class="peek-card-tag" style="${statusStyle}">${status}</div>
+    let badge='';
+    if(isActivePlayer){
+      const committed=f.committed.some(h=>h.n===c.n);
+      const hand=isPlayerFighter?G.hand:G.p2hand;
+      const inHand=(hand||[]).some(h=>h.ownerName===f.name&&h.n===c.n);
+      if(committed)badge=`<div style="font-size:.34rem;color:var(--gold);font-weight:700">✓ QUEUED</div>`;
+      else if(inHand)badge=`<div style="font-size:.34rem;color:var(--green)">in hand</div>`;
+    }
+    return`<div class="hcard" style="cursor:default;pointer-events:none;height:100px${c.ult?';border-color:rgba(212,168,67,.5)':''}">
+      <div class="hcard-cost${c.c===0?' free-cost':''}">${c.c===0?'F':c.c}</div>
+      <div class="hcard-ic">${c.ic}</div>
+      <div class="hcard-nm">${c.n}</div>
+      <div class="hcard-tp" style="color:${tc}">${c.ult?'⭐ULT':c.t.toUpperCase()}</div>
+      <div class="hcard-vl" style="color:${tc}">${val}</div>
+      <div style="font-size:.34rem;color:var(--dim2);text-align:center;line-height:1.3;white-space:pre-line">${desc}</div>
+      ${badge}
     </div>`;
   }).join('');
-
-  document.getElementById('peekTitle').innerHTML=`<span style="color:${boxCol}">${f.emoji} ${f.name}</span> <span style="color:var(--dim2);font-size:.5rem">${side} · ${f.role.toUpperCase()}</span>`;
-  document.getElementById('peekCards').innerHTML=`<div class="peek-cards-row">${html}</div>`;
   const cx=e?(e.clientX||e.touches?.[0]?.clientX||100):100;
   const cy=e?(e.clientY||e.touches?.[0]?.clientY||100):100;
-  const x=Math.min(cx+8,window.innerWidth-320);
-  const y=Math.min(cy+8,window.innerHeight-320);
+  const x=Math.min(cx+4,window.innerWidth-310);
+  const y=Math.min(cy+4,window.innerHeight-300);
   const peek=document.getElementById('peekEl');
   peek.style.left=x+'px';peek.style.top=y+'px';peek.style.display='block';
 }
