@@ -87,7 +87,6 @@ function executeAct(act,combos={}){
   owner.committed.forEach((card,ci)=>{
     setTimeout(()=>{
       if(!owner.alive)return;
-      if(card._disabled)return; // card was jammed/disabled, skip silently
       animF(owner.id,'attacking-anim');
       const aliveFoes=foes.filter(r=>r.alive);
       const aliveAllies=allies.filter(r=>r.alive);
@@ -332,7 +331,6 @@ function applySkillCondition(card, owner, aliveFoes, aliveAllies){
   }
 
   // ── No-op cards (pure utility, handled in applyUtilitySkill) ──
-  // Only skip damage if the card genuinely has no damage value
   const pureUtility = [
     'can\'t take critical','Gain 1 energy','Steal 1 energy','Destroy 1','Disable 1 card',
     'Transfer all debuffs','Remove all debuffs','Apply +10% ATK','Block one incoming',
@@ -564,7 +562,7 @@ function newRound(){
   if(G.done)return;
   [...G.player,...G.enemy].forEach(f=>{
     f.committed=[];f.overdrive=false;f.guard=false;
-    f.shield=0;
+    f.shield=0;f._attackOrder=0;f._attackTotal=0;
     if(f.buffRounds>0){f.buffRounds--;if(f.buffRounds===0)f.atkMult=1;}
     if(f.debuffRounds>0){f.debuffRounds--;if(f.debuffRounds===0){f.atk+=f.atkDebuffAmount||0;f.atkDebuffAmount=0;}}
     // Burn DoT
@@ -695,38 +693,48 @@ function showPeek(fid,e){
   if(e)e.stopPropagation();
   const f=G.player.find(x=>x.id===fid)||G.enemy.find(x=>x.id===fid);if(!f)return;
   const isPlayerFighter=G.player.some(x=>x.id===fid);
-  const pvp=G.mode==='pvp';
-  const isActivePlayer = !pvp
-    || (G.pvpTurn==='p1' && isPlayerFighter)
-    || (G.pvpTurn==='p2' && !isPlayerFighter)
-    || G.phase==='resolve';
-  document.getElementById('peekTitle').textContent=`${f.emoji} ${f.name} · ${isActivePlayer?'Your':'Enemy'} Cards`;
-  document.getElementById('peekCards').innerHTML=f.cardPool.map(c=>{
-    const tc=typeCol(c.t);
-    const val=c.t==='buff'?`+${Math.round((c.bv||0)*100)}%ATK`:c.t==='debuff'?`⬇️${Math.round((c.dv||0.20)*100)}%ATK`:c.v?`${c.t==='attack'?'⚔️':'💚'}${c.v}`:'';
+  const side=isPlayerFighter?'YOUR':'ENEMY';
+  const boxCol=`var(${EL_VAR[f.el]||'--Physical'})`;
+
+  const hand=f.hand||[];
+  const committed=f.committed||[];
+
+  function cardHtml(c,tag){
+    const isVariety=c.variety;
+    const val=c.v?`⚔️${c.v}`:(c.shield?`🛡️${c.shield}`:'');
     const desc=cardDesc(c,f.role);
-    let badge='';
-    if(isActivePlayer){
-      const committed=f.committed.some(h=>h.n===c.n);
-      const hand=isPlayerFighter?G.hand:G.p2hand;
-      const inHand=(hand||[]).some(h=>h.ownerName===f.name&&h.n===c.n);
-      if(committed)badge=`<div style="font-size:.34rem;color:var(--gold);font-weight:700">✓ QUEUED</div>`;
-      else if(inHand)badge=`<div style="font-size:.34rem;color:var(--green)">in hand</div>`;
-    }
-    return`<div class="hcard" style="cursor:default;pointer-events:none;height:100px${c.ult?';border-color:rgba(212,168,67,.5)':''}">
-      <div class="hcard-cost${c.c===0?' free-cost':''}">${c.c===0?'F':c.c}</div>
-      <div class="hcard-ic">${c.ic}</div>
-      <div class="hcard-nm">${c.n}</div>
-      <div class="hcard-tp" style="color:${tc}">${c.ult?'⭐ULT':c.t.toUpperCase()}</div>
-      <div class="hcard-vl" style="color:${tc}">${val}</div>
-      <div style="font-size:.34rem;color:var(--dim2);text-align:center;line-height:1.3;white-space:pre-line">${desc}</div>
-      ${badge}
+    const tagStyle=tag==='QUEUED'?'color:var(--gold);font-weight:700':tag==='IN HAND'?'color:var(--green)':'color:var(--dim2)';
+    return`<div class="peek-card${isVariety?' peek-card-variety':''}">
+      <div class="peek-card-cost${c.c===0?' free-cost':''}">${c.c===0?'F':c.c}</div>
+      <div class="peek-card-ic">${c.ic}</div>
+      <div class="peek-card-nm">${c.n}</div>
+      <div class="peek-card-tp" style="color:${isVariety?'var(--gold)':'var(--dim2)'}">${isVariety?'✦VAR':'SKL'}</div>
+      ${val?`<div class="peek-card-vl">${val}</div>`:''}
+      ${desc?`<div class="peek-card-desc">${desc}</div>`:''}
+      <div class="peek-card-tag" style="${tagStyle}">${tag}</div>
     </div>`;
-  }).join('');
+  }
+
+  let html='';
+  if(committed.length){
+    html+=`<div class="peek-section-lbl">⚔️ Committed (${committed.length})</div>`;
+    html+=`<div class="peek-cards-row">${committed.map(c=>cardHtml(c,'QUEUED')).join('')}</div>`;
+  }
+  if(hand.length){
+    html+=`<div class="peek-section-lbl">🃏 In Hand (${hand.length})</div>`;
+    html+=`<div class="peek-cards-row">${hand.map(c=>cardHtml(c,'IN HAND')).join('')}</div>`;
+  }
+  if(!committed.length&&!hand.length){
+    html=`<div style="color:var(--dim2);font-size:.6rem;padding:8px 0">No cards this round</div>`;
+  }
+
+  document.getElementById('peekTitle').innerHTML=`<span style="color:${boxCol}">${f.emoji} ${f.name}</span> <span style="color:var(--dim2);font-size:.5rem">${side} · ${f.role.toUpperCase()}</span>`;
+  document.getElementById('peekCards').innerHTML=html;
+
   const cx=e?(e.clientX||e.touches?.[0]?.clientX||100):100;
   const cy=e?(e.clientY||e.touches?.[0]?.clientY||100):100;
-  const x=Math.min(cx+4,window.innerWidth-310);
-  const y=Math.min(cy+4,window.innerHeight-300);
+  const x=Math.min(cx+8,window.innerWidth-320);
+  const y=Math.min(cy+8,window.innerHeight-320);
   const peek=document.getElementById('peekEl');
   peek.style.left=x+'px';peek.style.top=y+'px';peek.style.display='block';
 }

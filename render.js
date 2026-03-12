@@ -76,7 +76,12 @@ function renderFighter(f,isPlayer,hideCommitted=false){
   if(f.guard)pips+=`<span class="guard-pip">🛡️Grd</span>`;
   if(f.overdrive)pips+=`<span class="overdrive-pip">⚡OD</span>`;
   if(f.shield>0)pips+=`<span class="guard-pip">🛡️${f.shield}</span>`;
+  // Attack order badge — shown during resolve phase
+  const orderBadge = (G.phase==='resolve' && f._attackOrder)
+    ? `<div class="atk-order-badge ord-${f._attackOrder}">${f._attackOrder}<span class="atk-order-suffix">${f._attackOrder===1?'st':f._attackOrder===2?'nd':f._attackOrder===3?'rd':'th'}</span></div>`
+    : '';
   const header=`<div class="f-header" onclick="showPeek('${f.id}',event)">
+    ${orderBadge}
     <div class="f-avatar" style="background:${boxCol}20;border:2px solid ${boxCol}55">${f.emoji}</div>
     <div class="f-body">
       <div class="f-top">
@@ -89,7 +94,7 @@ function renderFighter(f,isPlayer,hideCommitted=false){
         <div class="hp-lbl" style="color:${hpBarColor}">${Math.max(0,f.hp)}/${f.maxHp}</div>
       </div>
       ${pips?`<div class="buff-row">${pips}</div>`:''}
-      <div class="peek-hint">👁 tap to peek</div>
+      <div class="peek-hint">👁 tap · right-click card for details</div>
     </div>
   </div>`;
   if(!isPlayer){
@@ -334,7 +339,7 @@ function hideCardDetail(){
 }
 
 document.addEventListener('mousedown',e=>{
-  // Close pinned popup if clicking outside it
+  // Close card detail on any click (if pinned, close on click outside popup)
   if(_cardDetailPinned){
     const d=document.getElementById('cardDetailEl');
     if(d&&!d.contains(e.target)){hideCardDetail();return;}
@@ -351,7 +356,7 @@ document.addEventListener('mouseup',e=>{
   if(lpActive&&!_cardDetailPinned){hideCardDetail();lpActive=false;}
 });
 
-// Right-click to pin card detail
+// Right-click to show pinned card detail — closes on any click outside
 document.addEventListener('contextmenu',e=>{
   const card=e.target.closest('.hcard');
   if(!card||card.classList.contains('hcdis'))return;
