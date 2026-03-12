@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>WuWa Battle</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;900&family=Exo+2:wght@300;400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="projLayer"></div>
+<div class="screen active" id="titleScreen">
+  <div class="title-logo">WuWa Battle</div>
+  <div class="title-sub">Card Combat · Beta</div>
+  <div class="title-desc">3v3 · tap cards to commit · highest DEF strikes first · unused cards carry over · combos deal bonus damage</div>
+  <div class="title-tags">
+    <span class="title-tag">1 DPS · 1 Sub-DPS · 1 Support</span>
+    <span class="title-tag">First Turn Balance</span>
+    <span class="title-tag">Overdrive at 10 Energy</span>
+    <span class="title-tag">Combo Synergy</span>
+  </div>
+  <div class="mode-btns">
+    <button class="start-btn" onclick="showModeSelect()">⚔️ Start Battle</button>
+    <button class="start-btn gallery-btn" onclick="openGallery()">📖 Resonator Gallery</button>
+    <button class="start-btn tut-start-btn" onclick="startTutorialBattle()">🎓 Play Tutorial</button>
+  </div>
+  <div style="font-size:.6rem;color:var(--dim);margin-top:-6px;">Teams randomly assigned · enforced role composition</div>
+  <button class="htp-corner-btn" onclick="openHowToPlay()">❓ How to Play</button>
+</div>
+
+<!-- How to Play Overlay -->
+<div class="htp-ov" id="htpOv">
+  <div class="htp-box">
+    <div class="htp-topbar">
+      <div class="htp-title">📖 How to Play</div>
+      <button class="htp-close" onclick="closeHowToPlay()">✕</button>
+    </div>
+    <div class="htp-tabs" id="htpTabs">
+      <button class="htp-tab active" onclick="htpTab(0,this)">Basics</button>
+      <button class="htp-tab" onclick="htpTab(1,this)">Cards</button>
+      <button class="htp-tab" onclick="htpTab(2,this)">Combos</button>
+      <button class="htp-tab" onclick="htpTab(3,this)">Elements</button>
+      <button class="htp-tab" onclick="htpTab(4,this)">Reactions</button>
+      <button class="htp-tab" onclick="htpTab(5,this)">Variety</button>
+      <button class="htp-tab tut-tab" onclick="htpTab(6,this)">▶ Tutorial</button>
+    </div>
+    <div class="htp-body" id="htpBody"></div>
+    <div class="htp-footer">
+      <div class="htp-footer-tip">💡 <span id="htpFooterTip">Tap a fighter portrait in battle to peek their full card pool!</span></div>
+      <div class="htp-footer-nav">
+        <button class="htp-nav-btn" id="htpPrev" onclick="htpNavStep(-1)">← Prev</button>
+        <span class="htp-page-lbl" id="htpPageLbl">1 / 6</span>
+        <button class="htp-nav-btn" id="htpNext" onclick="htpNavStep(1)">Next →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Gallery Screen -->
+<div class="screen" id="galleryScreen">
+  <div class="gallery-topbar">
+    <button class="gallery-back-btn" onclick="showScreen('titleScreen')">← Back</button>
+    <div class="gallery-title">Resonator Gallery</div>
+    <div class="gallery-count" id="galCount"></div>
+  </div>
+  <div class="gallery-filters" id="galleryFilters">
+    <button class="gf-btn active" onclick="filterGallery('all',this)">All</button>
+    <button class="gf-btn" onclick="filterGallery('dps',this)">⚔️ DPS</button>
+    <button class="gf-btn" onclick="filterGallery('subdps',this)">🌀 Sub</button>
+    <button class="gf-btn" onclick="filterGallery('support',this)">💚 Supp</button>
+    <button class="gf-btn" onclick="filterGallery('Spectro',this)" style="color:var(--Spectro)">🌟Spectro</button>
+    <button class="gf-btn" onclick="filterGallery('Havoc',this)" style="color:var(--Havoc)">💜Havoc</button>
+    <button class="gf-btn" onclick="filterGallery('Aero',this)" style="color:var(--Aero)">🌊Aero</button>
+    <button class="gf-btn" onclick="filterGallery('Glacio',this)" style="color:var(--Glacio)">❄️Glacio</button>
+    <button class="gf-btn" onclick="filterGallery('Electro',this)" style="color:var(--Electro)">⚡Electro</button>
+    <button class="gf-btn" onclick="filterGallery('Fusion',this)" style="color:var(--Fusion)">🔥Fusion</button>
+  </div>
+  <div class="gallery-grid" id="galleryGrid"></div>
+</div>
+
+<!-- Character profile overlay -->
+<div class="char-profile-ov" id="charProfileOv">
+  <div class="char-profile-box">
+    <button class="char-profile-close" onclick="closeCharProfile()">✕</button>
+    <div class="char-profile-header" id="charProfileHeader"></div>
+    <div class="char-profile-stats" id="charProfileStats"></div>
+    <div class="char-cards-title">Card Pool</div>
+    <div class="char-profile-cards" id="charProfileCards"></div>
+  </div>
+</div>
+
+<!-- Mode select overlay -->
+<div class="mode-select-ov" id="modeSelectOv">
+  <div class="mode-select-box">
+    <div class="mode-select-title">Select Mode</div>
+    <div class="mode-select-sub">Choose how you want to play this battle</div>
+    <div class="mode-select-choices">
+      <button class="mode-btn" onclick="startBattle('bot')">
+        <span class="mode-btn-icon">🤖</span>
+        <span class="mode-btn-text">
+          <span class="mode-btn-lbl">vs Bot</span>
+          <span class="mode-btn-desc">Solo — fight against AI · classic mode</span>
+        </span>
+      </button>
+      <button class="mode-btn pvp-choice" onclick="startBattle('pvp')">
+        <span class="mode-btn-icon">⚔️</span>
+        <span class="mode-btn-text">
+          <span class="mode-btn-lbl">vs Player</span>
+          <span class="mode-btn-desc">Local PvP — pass device · blind commits</span>
+        </span>
+      </button>
+      <button class="mode-btn tut-choice" onclick="startBattle('tutorial')">
+        <span class="mode-btn-icon">🎓</span>
+        <span class="mode-btn-text">
+          <span class="mode-btn-lbl">Tutorial</span>
+          <span class="mode-btn-desc">Guided first round — learn while you play</span>
+        </span>
+      </button>
+    </div>
+  </div>
+</div>
+<div class="screen" id="battleScreen">
+  <div class="top-bar">
+    <div class="top-bar-left">
+      <div class="en-block">
+        <span class="en-lbl">⚡</span>
+        <span class="en-val" id="enVal">10</span>
+      </div>
+      <div class="en-block" id="botEnBlock" style="opacity:.55">
+        <span class="en-lbl" style="color:var(--red)">🤖</span>
+        <span class="en-val" id="botEnVal" style="color:var(--red)">0</span>
+      </div>
+      <div class="top-divider"></div>
+      <div><div class="round-lbl">Round</div><div class="round-badge" id="roundNum">1</div></div>
+      <div id="overdriveBar" style="display:none" class="overdrive-banner">⚡ OVERDRIVE</div>
+      <div id="guardBar" style="display:none" class="guard-banner">🛡️ Guard</div>
+      <div class="phase-lbl" id="phaseLbl">Tap cards to commit</div>
+      <div class="pvp-turn-badge" id="pvpTurnBadge"></div>
+    </div>
+    <div class="top-bar-right">
+      <button class="pass-btn" id="passBtn" onclick="passRound()">⏭ Pass</button>
+      <button class="commit-btn" id="commitBtn" onclick="commitRound()">⚔️ Commit</button>
+      <button class="menu-btn" onclick="togglePauseMenu()" title="Menu">☰</button>
+    </div>
+  </div>
+  <div class="el-chart">
+    <span class="el-chart-lbl">⚗️ Elements:</span>
+    <span class="el-chip" style="color:var(--Spectro);border-color:rgba(232,216,74,.2)">🌟Spectro <span style="color:var(--dim2)">weak vs</span> <span style="color:var(--Havoc)">Havoc</span></span>
+    <span class="el-chip" style="color:var(--Havoc);border-color:rgba(192,96,216,.2)">💜Havoc <span style="color:var(--dim2)">weak vs</span> <span style="color:var(--Aero)">Aero</span></span>
+    <span class="el-chip" style="color:var(--Aero);border-color:rgba(74,208,192,.2)">🌊Aero <span style="color:var(--dim2)">weak vs</span> <span style="color:var(--Electro)">Electro</span></span>
+    <span class="el-chip" style="color:var(--Electro);border-color:rgba(144,112,240,.2)">⚡Electro <span style="color:var(--dim2)">weak vs</span> <span style="color:var(--Glacio)">Glacio</span></span>
+    <span class="el-chip" style="color:var(--Glacio);border-color:rgba(112,184,240,.2)">❄️Glacio <span style="color:var(--dim2)">weak vs</span> <span style="color:var(--Fusion)">Fusion</span></span>
+    <span class="el-chip" style="color:var(--Fusion);border-color:rgba(240,120,64,.2)">🔥Fusion <span style="color:var(--dim2)">weak vs</span> <span style="color:var(--Spectro)">Spectro</span></span>
+    <span class="el-chip" style="color:var(--dim2);border-color:rgba(255,255,255,.08)">🛡️Same element = 10% resist</span>
+  </div>
+  <div class="arena">
+    <div class="fighters-row">
+      <div class="team-label" id="playerTeamLbl">YOU</div>
+      <div class="team-fighters" id="playerCol"></div>
+      <div class="teams-divider"></div>
+      <div class="team-fighters" id="enemyCol"></div>
+      <div class="team-label" id="enemyTeamLbl" style="color:var(--red)">FOE</div>
+    </div>
+    <div class="hand-zone-3col" id="handZone">
+      <div class="hand-col" id="handDps">
+        <div class="hand-col-lbl dps-lbl">⚔️ DPS</div>
+        <div class="hand-col-cards" id="handDpsCards"></div>
+      </div>
+      <div class="hand-col-divider"></div>
+      <div class="hand-col" id="handSub">
+        <div class="hand-col-lbl sub-lbl">🌀 Sub</div>
+        <div class="hand-col-cards" id="handSubCards"></div>
+      </div>
+      <div class="hand-col-divider"></div>
+      <div class="hand-col" id="handSupp">
+        <div class="hand-col-lbl supp-lbl">💚 Supp</div>
+        <div class="hand-col-cards" id="handSuppCards"></div>
+      </div>
+    </div>  </div>
+</div>
+<div class="result-ov" id="resultOv">
+  <div class="result-box">
+    <div class="res-icon" id="resIcon">🏆</div>
+    <div class="res-title" id="resTitle">Victory!</div>
+    <div class="res-sub" id="resSub"></div>
+    <button class="again-btn" onclick="goTitle()">Play Again</button>
+  </div>
+</div>
+<div class="peek" id="peekEl" style="display:none">
+  <div class="peek-title" id="peekTitle"></div>
+  <div class="peek-cards" id="peekCards"></div>
+</div>
+
+<!-- Pass device overlay for PvP -->
+<div class="pass-ov" id="passOv">
+  <div class="pass-ov-icon">📱</div>
+  <div class="pass-ov-title" id="passOvTitle">Pass to Player 2</div>
+  <div class="pass-ov-msg" id="passOvMsg">Player 1 has locked in their cards.<br>Hand the device to Player 2!</div>
+  <div class="pass-ov-warn">⚠️ Player 1's cards are hidden. Don't peek!</div>
+  <button class="pass-ov-btn" id="passOvBtn" onclick="pvpContinue()">I'm Player 2 — Ready! ⚔️</button>
+</div>
+<script src="resonators.js"></script>
+<script src="card-effects.js"></script>
+<script src="render.js"></script>
+<script src="battle.js"></script>
+<script src="sound.js"></script>
+<script src="gallery.js"></script>
+<script src="tutorial.js"></script>
+<!-- ── In-game Tutorial Overlay ── -->
+<div id="tutOv"></div>
+<div class="tut-dim" id="tutDim" style="display:none"></div>
+<div class="tut-ring" id="tutRing" style="display:none"></div>
+<div class="tut-arrow-el" id="tutArrow" style="display:none">👆</div>
+<div id="tutTooltip">
+  <div class="tut-tt-head">
+    <span class="tut-tt-step" id="tutStepLbl">Step 1</span>
+    <button class="tut-tt-skip" onclick="exitTutorial()">✕ Exit</button>
+  </div>
+  <div class="tut-tt-title" id="tutTitle"></div>
+  <div class="tut-tt-body" id="tutBody"></div>
+  <button class="tut-tt-next" id="tutNextBtn" onclick="tutAdvance()" style="display:none">Got it! →</button>
+</div>
+<div id="tutBanner">
+  <span class="tut-banner-ic">🎓</span>
+  <span class="tut-banner-txt" id="tutBannerTxt">Tutorial Mode</span>
+  <span class="tut-banner-prog" id="tutBannerProg"></span>
+  <button class="tut-banner-exit" onclick="exitTutorial()">Exit Tutorial</button>
+</div>
+<!-- Pause menu -->
+<div class="pause-ov" id="pauseOv">
+  <div class="pause-box">
+    <div class="pause-title">⏸ Paused</div>
+    <div class="pause-divider"></div>
+    <button class="pause-btn" onclick="resumeGame()">
+      <span class="pause-btn-icon">▶️</span> Resume
+    </button>
+    <button class="pause-btn" onclick="restartGame()">
+      <span class="pause-btn-icon">🔄</span> Restart
+      <span class="pause-coming-soon"></span>
+    </button>
+    <div class="pause-divider"></div>
+    <button class="pause-btn" style="opacity:.4;cursor:not-allowed">
+      <span class="pause-btn-icon">🏆</span> Leaderboard
+      <span class="pause-coming-soon">coming soon</span>
+    </button>
+    <button class="pause-btn" style="opacity:.4;cursor:not-allowed">
+      <span class="pause-btn-icon">⚙️</span> Settings
+      <span class="pause-coming-soon">coming soon</span>
+    </button>
+    <div class="pause-divider"></div>
+    <button class="pause-btn exit-btn" onclick="exitToTitle()">
+      <span class="pause-btn-icon">🚪</span> Exit to Title
+    </button>
+  </div>
+</div>
+</body>
+</body>
+</html>
