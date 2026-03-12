@@ -82,134 +82,450 @@ function executeAct(act,combos={}){
   const owner=allies.find(x=>x.id===f.id);
   if(!owner||!owner.alive)return;
   const comboMult=combos[owner.id]||1;
-  const odMult=owner.overdrive?1.1:1.0;
 
-  // FILO — reverse the committed order for execution
-  const buffCards=owner.committed.filter(c=>c.t==='buff');
-  const restCards=owner.committed.filter(c=>c.t!=='buff');
-  const execOrder=[...buffCards,...restCards].reverse();
-
-  execOrder.forEach((card,ci)=>{
+  // All committed cards execute in order
+  owner.committed.forEach((card,ci)=>{
     setTimeout(()=>{
       if(!owner.alive)return;
       animF(owner.id,'attacking-anim');
       const aliveFoes=foes.filter(r=>r.alive);
       const aliveAllies=allies.filter(r=>r.alive);
 
-      if(card.t==='attack'){
-        if(!aliveFoes.length)return;
-        if(card.variety&&card.vfx&&card.vfx!=='none'){
-          playSound(card.ult?'ult':'attack');
-          const raw2=Math.round(card.v*(owner.atkMult||1)*(owner.atk/70)*comboMult*odMult);
-          flyCard(card,owner.id,owner.id,()=>{applyVarietyVfx(card,owner,allies,foes,raw2);});
-          return;
-        }
-        const target=pickTarget(aliveFoes,owner.role,card.t);
-        const raw=Math.round(card.v*owner.atkMult*(owner.atk/70)*comboMult*odMult*(G._teamDmgMult||1)*(G._phantomRift?1.30:1.0));
-        playSound(card.ult?'ult':'attack');
+      // ── Variety cards → delegate to applyVarietyVfx unchanged ──
+      if(card.variety&&card.vfx&&card.vfx!=='none'){
+        const raw=Math.round((card.v||0)*(owner.atkMult||1)*(owner.atk/70)*comboMult*(G._teamDmgMult||1)*(G._phantomRift?1.30:1.0));
+        playSound('attack');
+        flyCard(card,owner.id,owner.id,()=>{applyVarietyVfx(card,owner,allies,foes,raw);});
+        return;
+      }
+
+      // ── Skill cards: compute base values ──
+      const baseV = card.v || 0;
+      const baseShield = card.shield || 0;
+
+      // Apply skill condition modifiers
+      const {dmgMult, skipDmg, extraShieldMult, healAmt, targetOverride, skipIfNoCondition} =
+        applySkillCondition(card, owner, aliveFoes, aliveAllies);
+
+      if(skipIfNoCondition) return; // condition not met, card does nothing
+
+      // ── Damage portion ──
+      if(baseV > 0 && !skipDmg && aliveFoes.length){
+        const target = targetOverride || pickTarget(aliveFoes, owner.role, 'attack');
+        const raw = Math.round(
+          baseV * (owner.atkMult||1) * (owner.atk/70) * comboMult * dmgMult *
+          (G._teamDmgMult||1) * (G._phantomRift?1.30:1.0)
+        );
+        const defIgnore = G._phantomRift ? 0.50 : 0;
+        playSound('attack');
         flyCard(card,owner.id,target.id,()=>{
-          // Solar mark bonus
-          if(target._solarMark){raw2_marked=Math.round(raw*1.15);target._solarMark=0;}
-          const finalRaw=target._solarMark===undefined?raw:Math.round(raw*(target._reactionDmgMult||1));
-          const actualRaw=Math.round(raw*(target._reactionDmgMult||1));
-          // Phantom rift: ignore 50% DEF
-          const defIgnore=G._phantomRift?0.50:0;
-          const res=dealDmgEx(target,actualRaw,owner.el,defIgnore);
+          const actualRaw = Math.round(raw*(target._reactionDmgMult||1));
+          const res = dealDmgEx(target,actualRaw,owner.el,defIgnore);
           animF(target.id,'taking-hit');
-          if(res.isCrit)playSound('crit');
-          const cls=card.ult?'ult':res.isCrit?'crit':res.resist?'resist':'dmg';
+          if(res.isCrit) playSound('crit');
+          const cls = res.isCrit?'crit':res.resist?'resist':'dmg';
           floatDmg(target.id,`-${res.dmg}${res.isCrit?' CRIT!':''}`,cls);
-          if(res.absorbed>0)floatDmg(target.id,`🛡️-${res.absorbed}`,'buff');
+          if(res.absorbed>0) floatDmg(target.id,`🛡️-${res.absorbed}`,'buff');
+          // Lifesteal skill cards (Life Drain, Lifesteal Strike, Vital Strike)
+          applyLifestealSkill(card,owner,res.dmg);
           updateFighterDOM(target);
           fireProj(owner.id,target.id,owner.el,()=>{});
           checkWin();
         });
-      } else if(card.t==='debuff'){
-        if(!aliveFoes.length)return;
-        if(card.variety&&card.vfx&&card.vfx!=='none'){
-          playSound('debuff');
-          const raw3=0;
-          flyCard(card,owner.id,owner.id,()=>{applyVarietyVfx(card,owner,allies,foes,raw3);});
-          return;
-        }
-        const target=pickTarget(aliveFoes,owner.role,card.t);
-        const reduction=Math.round(target.atk*(card.dv||0.20));
-        target.atk=Math.max(1,target.atk-reduction);
-        target.debuffRounds=(target.debuffRounds||0)+1;
-        target.atkDebuffAmount=(target.atkDebuffAmount||0)+reduction;
-        playSound('debuff');
-        flyCard(card,owner.id,target.id,()=>{
-          animF(target.id,'taking-hit');
-          floatDmg(target.id,`⬇️ATK -${reduction}`,'debuff');
-          updateFighterDOM(target);
-        });
-      } else if(card.t==='defend'){
-        if(card.variety&&card.vfx&&card.vfx!=='none'){
-          playSound('defend');
-          flyCard(card,owner.id,owner.id,()=>{applyVarietyVfx(card,owner,allies,foes,0);});
-          return;
-        }
-        const sh=card.v;
-        owner.shield+=sh;
+      }
+
+      // ── Shield portion ──
+      if(baseShield > 0){
+        const sh = Math.round(baseShield * (extraShieldMult||1));
+        owner.shield = (owner.shield||0) + sh;
         playSound('defend');
         flyCard(card,owner.id,owner.id,()=>{
           animF(owner.id,'healing-anim');
           floatDmg(owner.id,`+${sh}🛡️`,'buff');
           updateFighterDOM(owner);
         });
-      } else if(card.t==='heal'){
-        if(card.variety&&card.vfx&&card.vfx!=='none'){
-          playSound('heal');
-          flyCard(card,owner.id,owner.id,()=>{applyVarietyVfx(card,owner,allies,foes,0);});
-          return;
-        }
-        const healAmt=Math.round(card.v*(1+owner.def/100));
-        const lowestAlly=aliveAllies.filter(a=>a.id!==owner.id).sort((a,b)=>(a.hp/a.maxHp)-(b.hp/b.maxHp))[0];
-        const mainHeal=Math.round(healAmt*0.7),selfHeal=Math.round(healAmt*0.3);
-        playSound('heal');
-        if(lowestAlly){
-          flyCard(card,owner.id,lowestAlly.id,()=>{
-            lowestAlly.hp=Math.min(lowestAlly.maxHp,lowestAlly.hp+mainHeal);
-            animF(lowestAlly.id,'healing-anim');
-            floatDmg(lowestAlly.id,`+${mainHeal}💚`,'heal');
-            updateFighterDOM(lowestAlly);
-          });
-        }
-        owner.hp=Math.min(owner.maxHp,owner.hp+selfHeal);
-        animF(owner.id,'healing-anim');
-        floatDmg(owner.id,`+${selfHeal}💚`,'heal');
-        updateFighterDOM(owner);
-      } else if(card.t==='buff'){
-        if(card.variety&&card.vfx&&card.vfx!=='none'){
-          playSound('buff');
-          flyCard(card,owner.id,owner.id,()=>{applyVarietyVfx(card,owner,allies,foes,0);});
-          return;
-        }
-        owner.atkMult=Math.min(2.5,(owner.atkMult||1)+(card.bv||.08));
-        owner.buffRounds=1;
-        playSound('buff');
-        if(owner.role==='support'){
-          const topDPS=aliveAllies.filter(a=>a.id!==owner.id&&a.role==='dps').sort((a,b)=>b.atk-a.atk)[0];
-          if(topDPS){
-            flyCard(card,owner.id,topDPS.id,()=>{
-              topDPS.atkMult=Math.min(2.5,(topDPS.atkMult||1)+(card.bv||.08)*0.7);
-              topDPS.buffRounds=1;
-              animF(topDPS.id,'healing-anim');
-              floatDmg(topDPS.id,`+${Math.round((card.bv||.08)*70)}%ATK`,'buff');
-              updateFighterDOM(topDPS);
-            });
-          }
-          floatDmg(owner.id,`+${Math.round((card.bv||.08)*30)}%ATK`,'buff');
-        } else {
-          flyCard(card,owner.id,owner.id,()=>{
-            floatDmg(owner.id,`+${Math.round((card.bv||.08)*100)}%ATK`,'buff');
-          });
-        }
-        animF(owner.id,'healing-anim');
-        updateFighterDOM(owner);
       }
+
+      // ── Heal portion (heal-only cards) ──
+      if(healAmt > 0){
+        const target = aliveAllies.filter(a=>a.id!==owner.id).sort((a,b)=>(a.hp/a.maxHp)-(b.hp/b.maxHp))[0] || owner;
+        target.hp = Math.min(target.maxHp, target.hp + healAmt);
+        playSound('heal');
+        flyCard(card,owner.id,target.id,()=>{
+          animF(target.id,'healing-anim');
+          floatDmg(target.id,`+${healAmt}💚`,'heal');
+          updateFighterDOM(target);
+        });
+      }
+
+      // ── Utility effects (energy steal/destroy, debuffs, disrupt, etc.) ──
+      applyUtilitySkill(card, owner, aliveFoes, aliveAllies, isPlayer);
+
     },ci*520);
   });
+}
+
+// ─────────────────────────────────────────────────────────────
+// applySkillCondition
+// Reads card.skill text and applies conditional modifiers.
+// Returns: dmgMult, skipDmg, extraShieldMult, healAmt,
+//          targetOverride, skipIfNoCondition
+// ─────────────────────────────────────────────────────────────
+function applySkillCondition(card, owner, aliveFoes, aliveAllies){
+  let dmgMult = 1;
+  let skipDmg = false;
+  let extraShieldMult = 1;
+  let healAmt = 0;
+  let targetOverride = null;
+  let skipIfNoCondition = false;
+  const sk = card.skill || '';
+  const hpPct = owner.hp / owner.maxHp;
+
+  // ── Damage multiplier conditions ──
+  if(sk.includes('150% damage') && sk.includes('below 10%')){
+    dmgMult = hpPct < 0.10 ? 1.50 : 1.0;
+  }
+  if(sk.includes('200%') && sk.includes('below 5%')){
+    dmgMult = hpPct < 0.05 ? 2.0 : 1.0;
+  }
+  if(sk.includes('120% damage') && sk.includes('below 50%') && !sk.includes('paired')){
+    dmgMult = hpPct < 0.50 ? 1.20 : 1.0;
+  }
+  if(sk.includes('lethal') && sk.includes('below 30%')){
+    if(hpPct < 0.30){ dmgMult = 999; } // true dmg handled in dealDmgEx via defIgnore
+  }
+  if(sk.includes('120% damage') && sk.includes('attacked first')){
+    dmgMult = owner._attackedFirst ? 1.20 : 1.0;
+  }
+  if(sk.includes('Guaranteed critical') && sk.includes('attacked first')){
+    owner._forceCrit = owner._attackedFirst || false;
+  }
+  if(sk.includes('Guaranteed critical') && sk.includes('variety card')){
+    const hasVariety = owner.committed.some(c=>c.variety);
+    owner._forceCrit = hasVariety;
+  }
+  if(sk.includes('20%') && sk.includes('more than 80% HP')){
+    const t = aliveFoes.length ? pickTarget(aliveFoes,owner.role,'attack') : null;
+    if(t && t.hp/t.maxHp > 0.80) dmgMult *= 1.20;
+  }
+  if(sk.includes('Strike 3 times')){
+    dmgMult = 1/3; // dealt 3x in applyUtilitySkill triple tempo
+    owner._tripleHit = true;
+  }
+  if(sk.includes('200% more damage') && sk.includes('last 3 rounds')){
+    dmgMult = owner._sameCardStreak >= 3 ? 2.0 : 1.0;
+  }
+  if(sk.includes('130% damage') && sk.includes('last round')){
+    dmgMult = owner._lastCardHit === card.n ? 1.30 : 1.0;
+  }
+  if(sk.includes('200% damage') && sk.includes('same round')){
+    // Resonant Fury — checked in applyUtilitySkill
+  }
+  if(sk.includes('120% damage') && sk.includes('paired with a variety card')){
+    const hasVariety = owner.committed.some(c=>c.variety);
+    dmgMult = hasVariety ? 1.20 : 1.0;
+  }
+  if(sk.includes('Attack twice') && sk.includes('debuff')){
+    owner._doubleHit = owner.debuffRounds > 0;
+  }
+  if(sk.includes('50% more damage') && sk.includes('all resonators')){
+    const allLow = aliveAllies.every(a => a.hp/a.maxHp < 0.50);
+    dmgMult = allLow ? 1.50 : 1.0;
+  }
+  if(sk.includes('120% damage') && sk.includes('HP% is lower than the target')){
+    const t = aliveFoes.length ? pickTarget(aliveFoes,owner.role,'attack') : null;
+    if(t && (owner.hp/owner.maxHp) < (t.hp/t.maxHp)) dmgMult = 1.20;
+  }
+  if(sk.includes('120% damage') && sk.includes('target\'s ATK is higher')){
+    const t = aliveFoes.length ? pickTarget(aliveFoes,owner.role,'attack') : null;
+    if(t && t.atk > owner.atk) dmgMult = 1.20;
+  }
+  if(sk.includes('130% damage') && sk.includes('target is buffed')){
+    const t = aliveFoes.length ? pickTarget(aliveFoes,owner.role,'attack') : null;
+    if(t && t.atkMult > 1) dmgMult = 1.30;
+  }
+  if(sk.includes('130% damage') && sk.includes('target is debuffed')){
+    const t = aliveFoes.length ? pickTarget(aliveFoes,owner.role,'attack') : null;
+    if(t && t.debuffRounds > 0) dmgMult = 1.30;
+  }
+  if(sk.includes('130% damage') && sk.includes('shield broke this round')){
+    dmgMult = owner._shieldBrokeThisRound ? 1.30 : 1.0;
+  }
+  if(sk.includes('30% more damage') && sk.includes('shielded target')){
+    const t = aliveFoes.length ? pickTarget(aliveFoes,owner.role,'attack') : null;
+    if(t && t.shield > 0) dmgMult = 1.30;
+  }
+  if(sk.includes('150% damage') && sk.includes('attacks last')){
+    dmgMult = owner._attackedLast ? 1.50 : 1.0;
+  }
+  if(sk.includes('120% damage') && sk.includes('taunted')){
+    dmgMult = owner._taunted ? 1.20 : 1.0;
+  }
+  if(sk.includes('130% damage') && sk.includes('shield broke this round')){
+    dmgMult = owner._shieldBroke ? 1.30 : 1.0;
+  }
+  if(sk.includes('120% damage') && sk.includes('debuffed last round')){
+    dmgMult = owner._wasDebuffedLastRound ? 1.20 : 1.0;
+  }
+  if(sk.includes('120% damage') && sk.includes('comboed by 2 cards') && sk.includes('next round')){
+    // Resonant Chain — handled as a buff set in applyUtilitySkill
+  }
+
+  // ── Target override conditions ──
+  if(sk.includes('Prioritize highest ATK enemy') && hpPct < 0.50 && aliveFoes.length){
+    targetOverride = [...aliveFoes].sort((a,b)=>b.atk-a.atk)[0];
+  }
+  if(sk.includes('Prioritize highest ATK') && !sk.includes('below') && aliveFoes.length){
+    targetOverride = [...aliveFoes].sort((a,b)=>b.atk-a.atk)[0];
+  }
+  if(sk.includes('Skip the highest DEF') && aliveFoes.length > 1){
+    const sorted = [...aliveFoes].sort((a,b)=>b.def-a.def);
+    targetOverride = sorted[1] || sorted[0];
+  }
+  if(sk.includes('Target the highest DEF') && hpPct < 0.50 && aliveFoes.length){
+    targetOverride = [...aliveFoes].sort((a,b)=>b.def-a.def)[0];
+  }
+  if(sk.includes('Target the highest HP%') && aliveFoes.length){
+    targetOverride = [...aliveFoes].sort((a,b)=>(b.hp/b.maxHp)-(a.hp/a.maxHp))[0];
+  }
+  if(sk.includes('Attack first') && hpPct < 0.50){
+    owner._goFirst = true;
+  }
+
+  // ── Heal-only cards (no damage) ──
+  if(sk.includes('Heal this resonator') && sk.includes('90–120 HP') && card.v === 0){
+    healAmt = Math.round(90 + Math.random()*30);
+    skipDmg = true;
+  }
+  if(sk.includes('Heal the lowest HP% teammate') && sk.includes('130')){
+    const target = aliveAllies.filter(a=>a.id!==owner.id).sort((a,b)=>(a.hp/a.maxHp)-(b.hp/b.maxHp))[0];
+    if(target){ target.hp=Math.min(target.maxHp,target.hp+130); floatDmg(target.id,'+130💚','heal'); updateFighterDOM(target); }
+    skipDmg = true;
+  }
+  if(sk.includes('Heal lowest HP% ally by 150') && sk.includes('below 30%')){
+    const target = aliveAllies.sort((a,b)=>(a.hp/a.maxHp)-(b.hp/b.maxHp))[0];
+    if(target && target.hp/target.maxHp < 0.30){ target.hp=Math.min(target.maxHp,target.hp+150); floatDmg(target.id,'+150💚🚑','heal'); updateFighterDOM(target); }
+    skipDmg = true;
+  }
+  if(sk.includes('Heal this resonator by 50% of shield')){
+    const sh = owner.shield || 0;
+    const h = Math.round(sh * 0.50);
+    owner.hp = Math.min(owner.maxHp, owner.hp + h);
+    floatDmg(owner.id,`+${h}💗`,'heal');
+    updateFighterDOM(owner);
+    skipDmg = true;
+  }
+  if(sk.includes('210% of this card') && sk.includes('lowest HP%')){
+    const target = aliveAllies.sort((a,b)=>(a.hp/a.maxHp)-(b.hp/b.maxHp))[0];
+    const h = Math.round((card.v||20)*2.10);
+    if(target){ target.hp=Math.min(target.maxHp,target.hp+h); floatDmg(target.id,`+${h}💚`,'heal'); updateFighterDOM(target); }
+    skipDmg = true;
+  }
+
+  // ── Shield condition modifiers ──
+  if(sk.includes('30% more shield') && sk.includes('hit by 2 cards')){
+    extraShieldMult = owner._hitBy2ThisRound ? 1.30 : 1.0;
+  }
+  if(sk.includes('Double the shield') && sk.includes('same attribute')){
+    extraShieldMult = owner._hitBySameEl ? 2.0 : 1.0;
+  }
+
+  // ── No-op cards (pure utility, handled in applyUtilitySkill) ──
+  const pureUtility = [
+    'can\'t take critical','Gain 1 energy','Steal 1 energy','Destroy 1','Disable 1 card',
+    'Transfer all debuffs','Remove all debuffs','Apply +10% ATK','Block one incoming',
+    'Reduce damage taken','Draw a card','Taunt','Target reduces incoming heal',
+    'Apply -20% damage','Apply -40% heal','Attack twice','Remove the first committed'
+  ];
+  if(card.v === 0 && card.shield === 0 && pureUtility.some(p=>sk.includes(p))){
+    skipDmg = true;
+  }
+
+  return{dmgMult, skipDmg, extraShieldMult, healAmt, targetOverride, skipIfNoCondition};
+}
+
+// ─────────────────────────────────────────────────────────────
+// applyLifestealSkill — handles Life Drain, Lifesteal Strike, Vital Strike
+// ─────────────────────────────────────────────────────────────
+function applyLifestealSkill(card, owner, dmgDealt){
+  const sk = card.skill || '';
+  if(sk.includes('90% of the damage inflicted')){
+    const h=Math.round(dmgDealt*0.90);
+    owner.hp=Math.min(owner.maxHp,owner.hp+h);
+    floatDmg(owner.id,`+${h}🩸`,'heal');updateFighterDOM(owner);
+  } else if(sk.includes('by the damage inflicted')){
+    owner.hp=Math.min(owner.maxHp,owner.hp+dmgDealt);
+    floatDmg(owner.id,`+${dmgDealt}🩸`,'heal');updateFighterDOM(owner);
+  } else if(sk.includes('heal this resonator') && sk.includes('50')){
+    owner.hp=Math.min(owner.maxHp,owner.hp+50);
+    floatDmg(owner.id,'+50💗','heal');updateFighterDOM(owner);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// applyUtilitySkill — handles all non-damage/shield effects:
+// energy steal/destroy, debuffs, disruption, buffs, taunt, etc.
+// ─────────────────────────────────────────────────────────────
+function applyUtilitySkill(card, owner, aliveFoes, aliveAllies, isPlayer){
+  const sk = card.skill || '';
+  if(!sk) return;
+
+  // Energy steal / destroy
+  if(sk.includes('Steal 1 energy') && !sk.includes('variety card')){
+    if(isPlayer && G.botEnergy > 0){ G.botEnergy--; floatDmg(owner.id,'⚡Steal 1 EN','buff'); }
+    else if(!isPlayer && G.energy > 0){ G.energy--; floatDmg(owner.id,'⚡Steal 1 EN','buff'); }
+  }
+  if(sk.includes('Steal 1 energy') && sk.includes('variety card')){
+    const hasVariety = owner.committed.some(c=>c.variety);
+    if(hasVariety){
+      if(isPlayer && G.botEnergy > 0){ G.botEnergy--; floatDmg(owner.id,'⚡Steal(VAR)','buff'); }
+      else if(!isPlayer && G.energy > 0){ G.energy--; floatDmg(owner.id,'⚡Steal(VAR)','buff'); }
+    }
+  }
+  if(sk.includes('Destroy 1 of your opponent\'s energy')){
+    if(isPlayer && G.botEnergy > 0){ G.botEnergy--; floatDmg(owner.id,'💥-1 EN','buff'); }
+    else if(!isPlayer && G.energy > 0){ G.energy--; floatDmg(owner.id,'💥-1 EN','buff'); }
+  }
+
+  // Debuffs
+  if(sk.includes('Apply -20% damage debuff')){
+    aliveFoes.forEach(t=>{ t._dmgReduced=(t._dmgReduced||0)+0.20; floatDmg(t.id,'⬇️-20%DMG','debuff'); updateFighterDOM(t); });
+  }
+  if(sk.includes('Apply -40% heal debuff')){
+    aliveFoes.forEach(t=>{ t._healDebuff=(t._healDebuff||0)+0.40; t._healDebuffRounds=2; floatDmg(t.id,'⬇️-40%HEAL','debuff'); updateFighterDOM(t); });
+  }
+  if(sk.includes('Target reduces incoming heal')){
+    const t = aliveFoes.length ? pickTarget(aliveFoes,owner.role,'debuff') : null;
+    if(t){ t._healDebuff=(t._healDebuff||0)+0.50; t._healDebuffRounds=2; floatDmg(t.id,'🚫-50%HEAL','debuff'); updateFighterDOM(t); }
+  }
+  if(sk.includes('Transfer all debuffs')){
+    const t = aliveFoes.length ? pickTarget(aliveFoes,owner.role,'attack') : null;
+    if(t && owner.debuffRounds > 0){
+      t.debuffRounds=(t.debuffRounds||0)+owner.debuffRounds;
+      t.atkDebuffAmount=(t.atkDebuffAmount||0)+(owner.atkDebuffAmount||0);
+      t.atk=Math.max(1,t.atk-(owner.atkDebuffAmount||0));
+      owner.debuffRounds=0; owner.atkDebuffAmount=0;
+      floatDmg(owner.id,'☠️Debuff Transferred!','buff'); floatDmg(t.id,'☠️Debuff Received!','debuff');
+      updateFighterDOM(owner); updateFighterDOM(t);
+    }
+  }
+
+  // Disruption
+  if(sk.includes('Remove the first committed card')){
+    const t = aliveFoes.length ? pickTarget(aliveFoes,owner.role,'attack') : null;
+    if(t && t.committed && t.committed.length){ t.committed.splice(0,1); floatDmg(t.id,'✂️Card Removed!','debuff'); updateFighterDOM(t); }
+  }
+  if(sk.includes('Disable 1 card of the enemy')){
+    const t = aliveFoes.length ? pickTarget(aliveFoes,owner.role,'attack') : null;
+    if(t && t.committed && t.committed.length){
+      const idx = Math.floor(Math.random()*t.committed.length);
+      t.committed[idx]._disabled=true;
+      floatDmg(t.id,'📡Card Jammed!','debuff'); updateFighterDOM(t);
+    }
+  }
+  if(sk.includes('Disable enemy heal card')){
+    aliveFoes.forEach(t=>{
+      const healCard = t.committed.find(c=>c.skill&&(c.skill.includes('Heal')||c.skill.includes('heal')));
+      if(healCard){ healCard._disabled=true; floatDmg(t.id,'🔒Heal Blocked!','debuff'); updateFighterDOM(t); }
+    });
+  }
+  if(sk.includes('Randomly discard an enemy card') && sk.includes('comboed by 2')){
+    if(owner.committed.length >= 2){
+      const t = aliveFoes.length ? pick(aliveFoes) : null;
+      if(t && t.committed && t.committed.length){
+        const idx = Math.floor(Math.random()*t.committed.length);
+        t.committed.splice(idx,1);
+        floatDmg(t.id,'🎲Card Discarded!','debuff'); updateFighterDOM(t);
+      }
+    }
+  }
+
+  // Buffs / team effects
+  if(sk.includes('+10% ATK to the whole team')){
+    aliveAllies.forEach(a=>{ a.atkMult=Math.min(2.5,(a.atkMult||1)+0.10); a.buffRounds=1; floatDmg(a.id,'+10%ATK📯','buff'); updateFighterDOM(a); });
+  }
+  if(sk.includes('Remove all debuffs')){
+    owner.debuffRounds=0; owner.atkDebuffAmount=0; owner.atk=owner.atk+(owner.atkDebuffAmount||0);
+    floatDmg(owner.id,'✨Cleansed!','buff'); updateFighterDOM(owner);
+  }
+
+  // Taunt effects
+  if(sk.includes('Taunt all DPS attacks') && sk.includes('15%')){
+    owner._taunt='dps'; owner._tauntDmgReduce=0.15;
+    floatDmg(owner.id,'🛡️TAUNT ALL DPS','buff'); updateFighterDOM(owner);
+  }
+  if(sk.includes('Taunts enemy DPS attacks') && !sk.includes('all')){
+    owner._taunt='dps';
+    floatDmg(owner.id,'📣TAUNT DPS','buff'); updateFighterDOM(owner);
+  }
+  if(sk.includes('Taunt the next round')){
+    owner._tauntNextRound=true;
+    floatDmg(owner.id,'📣TAUNT NXT RND','buff'); updateFighterDOM(owner);
+  }
+
+  // Defensive self effects
+  if(sk.includes('can\'t take critical damage')){
+    owner._noCrit=true;
+    floatDmg(owner.id,'🛡️No Crit!','buff'); updateFighterDOM(owner);
+  }
+  if(sk.includes('DEF next round doubled')){
+    owner._doubleDefNextRound=true;
+    floatDmg(owner.id,'🏰DEF×2 NXT','buff'); updateFighterDOM(owner);
+  }
+  if(sk.includes('Reduce damage taken by 20%')){
+    owner._dmgTakenReduce=(owner._dmgTakenReduce||0)+0.20;
+    floatDmg(owner.id,'🌫️-20%DMG','buff'); updateFighterDOM(owner);
+  }
+  if(sk.includes('Block one incoming attack')){
+    owner._blockNext=true;
+    floatDmg(owner.id,'🌀BLOCK','buff'); updateFighterDOM(owner);
+  }
+  if(sk.includes('Reflect 30% damage') && sk.includes('below 30%')){
+    if(owner.hp/owner.maxHp < 0.30){ owner._reflect=0.30; floatDmg(owner.id,'🌹THORNS 30%','buff'); updateFighterDOM(owner); }
+  }
+
+  // Draw effects
+  if(sk.includes('Draw a card') && sk.includes('attacked first') && owner._attackedFirst){
+    const extra = drawHand(owner).slice(0,1).map(c=>({...c,ownerId:owner.id,ownerName:owner.name,hid:'h'+Math.random().toString(36).slice(2)}));
+    owner.hand.push(...extra);
+    floatDmg(owner.id,'🃏+1 Card','buff');
+  }
+  if(sk.includes('Draw a card') && sk.includes('shield didn\'t break') && !owner._shieldBrokeThisRound && owner.shield > 0){
+    const extra = drawHand(owner).slice(0,1).map(c=>({...c,ownerId:owner.id,ownerName:owner.name,hid:'h'+Math.random().toString(36).slice(2)}));
+    owner.hand.push(...extra);
+    floatDmg(owner.id,'🃏+1 Card','buff');
+  }
+
+  // Energy gain
+  if(sk.includes('Gain 1 energy when hit by 2 cards')){
+    owner._energyGainOnHit2=true; // checked in dealDmgEx equivalent
+  }
+  if(sk.includes('Gain 1 energy when attacked with 50% HP')){
+    owner._energyGainAt50=true;
+  }
+  if(sk.includes('Gain 1 energy if this card is active and attacking')){
+    if(isPlayer) G.energy=Math.min(3,G.energy+1);
+    else G.botEnergy=Math.min(3,G.botEnergy+1);
+    floatDmg(owner.id,'⚡+1 EN','buff');
+  }
+  if(sk.includes('Gain 1 energy if this resonator\'s shield breaks')){
+    owner._energyOnShieldBreak=true;
+  }
+
+  // Triple hit (Triple Tempo)
+  if(sk.includes('Strike 3 times') && owner._tripleHit){
+    owner._tripleHit=false;
+    const t = aliveFoes.length ? pickTarget(aliveFoes,owner.role,'attack') : null;
+    if(t){
+      const raw = Math.round((card.v||35)*(owner.atkMult||1)*(owner.atk/70)*(G._teamDmgMult||1));
+      [0,1,2].forEach(i=>{
+        const res=dealDmgEx(t,Math.round(raw/3),owner.el,0);
+        if(t.alive) floatDmg(t.id,`-${res.dmg}⚡`,'dmg');
+        updateFighterDOM(t);
+      });
+      checkWin();
+    }
+  }
 }
 
 function pickTarget(foes,role,cardType){
