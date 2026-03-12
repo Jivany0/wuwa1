@@ -107,25 +107,33 @@ function discardCard(fid, hid){
 // ═══════════════════════════════════════════════════════════
 function detectCombos(playerActs){
   const combos={};
+  // Buff+Attack combo: fighter has both a shield card AND a damage card
   playerActs.forEach(act=>{
     const f=act.fighter,cards=f.committed;
-    const hasAtk=cards.some(c=>c.t==='attack'||c.t==='debuff');
-    const hasBuff=cards.some(c=>c.t==='buff');
-    if(hasAtk&&hasBuff){combos[f.id]=(combos[f.id]||1)+0.20;showCombo('⚡ Combo! Buff+Attack +20%');}
+    const hasDmg   = cards.some(c=>c.v>0&&!c.variety);
+    const hasShield = cards.some(c=>c.shield>0);
+    if(hasDmg&&hasShield){combos[f.id]=(combos[f.id]||1)+0.20;showCombo('⚡ Combo! Shield+Attack +20%');}
   });
-  const suppActs=playerActs.filter(a=>a.fighter.role==='support');
-  const dpsActs=playerActs.filter(a=>a.fighter.role==='dps');
-  if(suppActs.some(a=>a.fighter.committed.some(c=>c.t==='heal'))&&dpsActs.length){
+  // Support+DPS synergy: support committed anything + DPS is alive with cards
+  const suppActs=playerActs.filter(a=>a.fighter.role==='support'&&a.fighter.committed.length>0);
+  const dpsActs =playerActs.filter(a=>a.fighter.role==='dps');
+  if(suppActs.length&&dpsActs.length){
     dpsActs.forEach(a=>{combos[a.fighter.id]=(combos[a.fighter.id]||1)+0.10;});
     showCombo('💚 Team Synergy! Support+DPS +10%');
   }
-  const subDebuff=playerActs.filter(a=>a.fighter.role==='subdps'&&a.fighter.committed.some(c=>c.t==='debuff'));
-  if(subDebuff.length&&dpsActs.length){
+  // SubDPS chain: subdps has a disruptive/utility skill + dps is attacking
+  const subDisrupt=playerActs.filter(a=>a.fighter.role==='subdps'&&a.fighter.committed.some(c=>
+    c.skill&&(c.skill.includes('Steal')||c.skill.includes('Disable')||
+              c.skill.includes('Remove')||c.skill.includes('Destroy')||
+              c.skill.includes('debuff')||c.skill.includes('Taunt'))
+  ));
+  if(subDisrupt.length&&dpsActs.length){
     dpsActs.forEach(a=>{combos[a.fighter.id]=(combos[a.fighter.id]||1)+0.25;});
     showCombo('🌀 Chain Combo! SubDPS→DPS +25%');
   }
+  // Elemental resonance: 2+ fighters of same element committed cards
   const elCounts={};
-  playerActs.forEach(a=>{a.fighter.committed.forEach(()=>{elCounts[a.fighter.el]=(elCounts[a.fighter.el]||0)+1;});});
+  playerActs.forEach(a=>{if(a.fighter.committed.length)elCounts[a.fighter.el]=(elCounts[a.fighter.el]||0)+1;});
   if(Object.values(elCounts).some(v=>v>=2)){
     playerActs.forEach(a=>{combos[a.fighter.id]=(combos[a.fighter.id]||1)+0.15;});
     showCombo('🌟 Elemental Resonance! +15% Team DMG');
@@ -190,10 +198,6 @@ function commitRound(){
   }
   G._passing=false;
   G.phase='resolve';
-  const playerOD=G.startEnergy>=G.maxE;
-  const botOD=G.botStartEnergy>=G.maxE;
-  if(playerOD)G.player.filter(f=>f.alive).forEach(f=>{f.overdrive=true;floatDmg(f.id,'⚡ OD','overdrive');});
-  if(botOD)   G.enemy.filter(f=>f.alive).forEach(f=>{f.overdrive=true;});
   applyPassiveShields(G.player.filter(f=>f.alive&&f.committed.length>0));
   applyPassiveShields(G.enemy.filter(f=>f.alive&&f.committed.length>0));
   renderAll();
