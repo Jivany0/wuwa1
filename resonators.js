@@ -224,44 +224,104 @@ const EL_ROLE_POOL = {
 };
 
 // ─────────────────────────────────────────────────────────────
-// buildCardPool(resonator)
-// Returns the combined drawable pool for a resonator
-// (all_role + role + el_role), tagged with pool origin
+// weightedPick(weightedPools, n)
+// Picks n unique cards from weighted pools.
+// weightedPools: [{cards:[], weight:0-100}, ...]  weights sum to 100.
+// Each draw rolls a random number and selects a pool by weight,
+// then picks a random card from that pool not already chosen.
+// Falls back to any remaining card if the rolled pool is exhausted.
 // ─────────────────────────────────────────────────────────────
-function buildCardPool(resonator) {
-  const {el, role} = resonator;
+function weightedPick(weightedPools, n) {
+  const chosen = [];
+  const usedNames = new Set();
+  // Flatten all available cards with their pool weight for fallback
+  const allCards = weightedPools.flatMap(wp => wp.cards);
+
+  for (let i = 0; i < n; i++) {
+    // Try weighted pick up to 10 times before falling back
+    let picked = null;
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const roll = Math.random() * 100;
+      let cumulative = 0;
+      let pool = null;
+      for (const wp of weightedPools) {
+        cumulative += wp.weight;
+        if (roll < cumulative) { pool = wp.cards; break; }
+      }
+      if (!pool) pool = weightedPools[weightedPools.length - 1].cards;
+      const available = pool.filter(c => !usedNames.has(c.n));
+      if (available.length) {
+        picked = available[Math.floor(Math.random() * available.length)];
+        break;
+      }
+    }
+    // Absolute fallback: any card not yet chosen
+    if (!picked) {
+      const remaining = allCards.filter(c => !usedNames.has(c.n));
+      if (!remaining.length) break;
+      picked = remaining[Math.floor(Math.random() * remaining.length)];
+    }
+    usedNames.add(picked.n);
+    chosen.push({...picked});
+  }
+  return chosen;
+}
+
+// ─────────────────────────────────────────────────────────────
+// pickLockedCards(resonator)
+// Picks exactly 3 unique skill cards at battle start.
+// Cards are locked for the entire match — never redrawn.
+// Weights per role:
+//   DPS:     55% own-role, 25% el+role, 15% subdps, 5% support
+//   SubDPS:  55% own-role, 25% el+role, 15% dps,    5% support
+//   Support: 65% own-role, 25% el+role, 8%  subdps, 2% dps
+// ─────────────────────────────────────────────────────────────
+function pickLockedCards(resonator) {
+  const { el, role } = resonator;
   const elRoleKey = `${el}-${role}`;
-  const allCards = [
-    ...ALL_ROLE_POOL.map(c => ({...c, pool:"all"})),
-    ...(ROLE_POOL[role] || []).map(c => ({...c, pool:"role"})),
-    ...(EL_ROLE_POOL[elRoleKey] || []).map(c => ({...c, pool:"el_role"})),
-  ];
-  return allCards;
+  const ownRole   = ROLE_POOL[role] || [];
+  const elRole    = EL_ROLE_POOL[elRoleKey] || [];
+
+  let weightedPools;
+  if (role === 'dps') {
+    weightedPools = [
+      { weight: 55, cards: ownRole },
+      { weight: 25, cards: elRole },
+      { weight: 15, cards: ROLE_POOL.subdps },
+      { weight:  5, cards: ROLE_POOL.support },
+    ];
+  } else if (role === 'subdps') {
+    weightedPools = [
+      { weight: 55, cards: ownRole },
+      { weight: 25, cards: elRole },
+      { weight: 15, cards: ROLE_POOL.dps },
+      { weight:  5, cards: ROLE_POOL.support },
+    ];
+  } else { // support
+    weightedPools = [
+      { weight: 65, cards: ownRole },
+      { weight: 25, cards: elRole },
+      { weight:  8, cards: ROLE_POOL.subdps },
+      { weight:  2, cards: ROLE_POOL.dps },
+    ];
+  }
+
+  return weightedPick(weightedPools, 3);
 }
 
 // ─────────────────────────────────────────────────────────────
 // buildTeamDeck(fighters)
-// Builds a full shuffled deck for a 3-fighter team.
-// Per fighter: up to 6 basic cards (max 2 copies of same name),
-// plus exactly 1 variety card if they have one.
+// Each fighter's 3 locked cards go into the shared deck,
+// tagged with ownerId/ownerName. Variety card added once each.
 // Deck is shuffled before returning.
 // ─────────────────────────────────────────────────────────────
 function buildTeamDeck(fighters) {
   const deck = [];
   for (const f of fighters) {
-    const pool = buildCardPool(f);
-    const shuffled = shuf([...pool]);
-    const dupCount = {};
-    let added = 0;
-    for (const card of shuffled) {
-      if (added >= 6) break;
-      const key = card.n;
-      const count = dupCount[key] || 0;
-      if (count >= 2) continue;
+    // f.lockedCards set during makeFighter; use them directly
+    for (const card of (f.lockedCards || [])) {
       deck.push({ ...card, ownerId: f.id, ownerName: f.name,
         hid: 'h' + Math.random().toString(36).slice(2) });
-      dupCount[key] = count + 1;
-      added++;
     }
     const variety = CHAR_CARDS[f.name];
     if (variety) {
@@ -275,7 +335,6 @@ function buildTeamDeck(fighters) {
 // ─────────────────────────────────────────────────────────────
 // drawFromDeck(deck, hand, n)
 // Moves up to n cards from deck → hand, capped so hand ≤ 9.
-// Mutates both arrays in place.
 // ─────────────────────────────────────────────────────────────
 function drawFromDeck(deck, hand, n) {
   const toDraw = Math.min(n, Math.max(0, 9 - hand.length), deck.length);

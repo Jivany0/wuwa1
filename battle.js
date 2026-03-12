@@ -27,10 +27,13 @@ function makeFighter(c){
   const role=normRole(c.role||'dps');
   const rs=ROLE_ST[role];
   const maxHp=rnd(...rs.hp),atk=rnd(...rs.atk),def=rnd(...rs.def);
-  return{...c,role,maxHp,hp:maxHp,atk,def,
+  const f={...c,role,maxHp,hp:maxHp,atk,def,
     shield:0,atkMult:1,buffRounds:0,debuffRounds:0,atkDebuffAmount:0,alive:true,overdrive:false,guard:false,
     id:'f'+Math.random().toString(36).slice(2),
     committed:[]};
+  // Pick 3 unique skill cards at battle start — locked for the whole match
+  f.lockedCards = pickLockedCards(f);
+  return f;
 }
 
 function calcFirstTurn(){

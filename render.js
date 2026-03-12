@@ -207,10 +207,9 @@ function renderAll(){
   document.getElementById('playerCol').innerHTML=G.player.map(f=>renderFighter(f,true,isP2Turn&&G.pvpTurn==='p2')).join('');
   document.getElementById('enemyCol').innerHTML=G.enemy.map(f=>renderFighter(f,isPvP&&isP2Turn,false)).join('');
 
-  // Hand display — shared team hand, cards grouped by owner's role
+  // Hand display — shared team hand, grouped by owner's role
   const displayTeam=isP2Turn?G.enemy:G.player;
   const displayHand=isP2Turn?(G.enemyHand||[]):(G.playerHand||[]);
-
   const dpsCards=displayHand.filter(hc=>{const f=displayTeam.find(x=>x.id===hc.ownerId);return f&&f.role==='dps'&&f.alive;});
   const subCards=displayHand.filter(hc=>{const f=displayTeam.find(x=>x.id===hc.ownerId);return f&&f.role==='subdps'&&f.alive;});
   const suppCards=displayHand.filter(hc=>{const f=displayTeam.find(x=>x.id===hc.ownerId);return f&&f.role==='support'&&f.alive;});
