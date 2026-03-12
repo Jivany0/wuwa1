@@ -241,30 +241,36 @@ function buildCardPool(resonator) {
 
 // ─────────────────────────────────────────────────────────────
 // drawHand(resonator)
-// Draws 3 random basic cards from the pool (max 2 duplicates)
-// Returns array of 3 cards + the variety card = 4 total
+// Rules:
+//   - Always draws exactly 3 basic cards (max 2 dupes per card name)
+//   - Variety card has a 60% chance to appear (max 1, never duplicated)
+//   - Max 4 cards per resonator (3 basics + maybe 1 variety)
+//   - Team max = 9 cards (3 basics × 3 fighters, variety is bonus on top)
 // ─────────────────────────────────────────────────────────────
 function drawHand(resonator) {
   const pool = buildCardPool(resonator);
   const charName = resonator.name;
-  const variety = CHAR_CARDS[charName];          // single variety card object
+  const variety = CHAR_CARDS[charName];
   const drawn = [];
   const dupCount = {};
 
-  // Shuffle pool
+  // Always draw exactly 3 basics, max 2 dupes per card name
   const shuffled = [...pool].sort(() => Math.random() - 0.5);
-
   for (const card of shuffled) {
     if (drawn.length >= 3) break;
     const key = card.n;
     const count = dupCount[key] || 0;
-    if (count >= 2) continue;                    // max 2 duplicates
+    if (count >= 2) continue;
     drawn.push({...card});
     dupCount[key] = count + 1;
   }
 
-  // Variety is always slot 4, fixed
-  return [...drawn, {...variety, variety: true}];
+  // Variety: 60% chance, only 1, never a duplicate
+  if (variety && Math.random() < 0.60) {
+    drawn.push({...variety, variety: true});
+  }
+
+  return drawn; // 3 or 4 cards
 }
 
 // ═══════════════════════════════════════════════════════════
