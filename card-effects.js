@@ -8,6 +8,7 @@ function applyVarietyVfx(card,owner,allies,foes,raw){
   const vfx=card.vfx||'none';
   const aliveFoes=foes.filter(f=>f.alive);
   const aliveAllies=allies.filter(f=>f.alive);
+  const odLabel=owner.overdrive?' ⚡OD':'';
   switch(vfx){
     case 'buff_allallies':
       aliveAllies.forEach(a=>{
@@ -22,7 +23,7 @@ function applyVarietyVfx(card,owner,allies,foes,raw){
         const t=pickTarget(aliveFoes,owner.role,'attack');
         const bonus=t.atkMult>1?Math.round(t.maxHp*.10):0;
         const res=dealDmg(t,raw+bonus,owner.el);
-        floatDmg(t.id,`-${res.dmg}${bonus>0?' 🌑DEVOURED':''}`,res.isCrit?'crit':'dmg');
+        floatDmg(t.id,`-${res.dmg}${bonus>0?' 🌑DEVOURED':''}${odLabel}`,res.isCrit?'crit':'dmg');
         if(bonus>0){t.atkMult=1;t.buffRounds=0;floatDmg(t.id,'Buff Consumed!','debuff');}
         updateFighterDOM(t);checkWin();
       }
@@ -32,8 +33,7 @@ function applyVarietyVfx(card,owner,allies,foes,raw){
         const t=pickTarget(aliveFoes,owner.role,'attack');
         const res=dealDmg(t,raw,owner.el);
         const steal=Math.round(res.dmg*.40);
-        floatDmg(t.id,`-${res.dmg}`,'dmg');
-        owner.hp=Math.min(owner.maxHp,owner.hp+steal);
+        floatDmg(t.id,`-${res.dmg}${odLabel}`,'dmg');
         floatDmg(owner.id,`+${steal}🩸`,'heal');
         updateFighterDOM(t);updateFighterDOM(owner);checkWin();
       }
@@ -45,7 +45,7 @@ function applyVarietyVfx(card,owner,allies,foes,raw){
         const t=pickTarget(aliveFoes,owner.role,'attack');
         const mult=(t.hp/t.maxHp<threshold)?2.0:1.0;
         const res=dealDmg(t,Math.round(raw*mult),owner.el);
-        floatDmg(t.id,`-${res.dmg}${mult>1?' ⚡EXECUTE!':''}`,mult>1?'ult':'dmg');
+        floatDmg(t.id,`-${res.dmg}${mult>1?' ⚡EXECUTE!':''}${odLabel}`,mult>1?'ult':'dmg');
         updateFighterDOM(t);checkWin();
       }
       return true;
@@ -310,7 +310,7 @@ function applyVarietyVfx(card,owner,allies,foes,raw){
       owner.buffRounds=1;
       floatDmg(owner.id,`✦+${Math.round((card.bv||.08)*100)}%ATK`,'buff');
       // Draw one extra card from owner's pool
-      if(G.hand.length<14){const nc={...pick(owner.cardPool),hid:'h'+Math.random().toString(36).slice(2),ownerName:owner.name,ownerId:owner.id};G.hand.push(nc);}
+      {const pool=buildCardPool(owner);const nc={...pick(pool),hid:'h'+Math.random().toString(36).slice(2),ownerName:owner.name,ownerId:owner.id};owner.hand.push(nc);}
       floatDmg(owner.id,'+1🃏','heal');
       updateFighterDOM(owner);
       return true;
@@ -799,4 +799,3 @@ function showCombo(text){
   document.body.appendChild(d);
   comboTimeout=setTimeout(()=>d.remove(),900);
 }
-

@@ -699,15 +699,15 @@ function showPeek(fid,e){
     || (G.pvpTurn==='p2' && !isPlayerFighter)
     || G.phase==='resolve';
   document.getElementById('peekTitle').textContent=`${f.emoji} ${f.name} · ${isActivePlayer?'Your':'Enemy'} Cards`;
-  document.getElementById('peekCards').innerHTML=f.cardPool.map(c=>{
+  const peekPool=[...buildCardPool(f),{...CHAR_CARDS[f.name],variety:true}];
+  document.getElementById('peekCards').innerHTML=peekPool.map(c=>{
     const tc=typeCol(c.t);
     const val=c.t==='buff'?`+${Math.round((c.bv||0)*100)}%ATK`:c.t==='debuff'?`⬇️${Math.round((c.dv||0.20)*100)}%ATK`:c.v?`${c.t==='attack'?'⚔️':'💚'}${c.v}`:'';
     const desc=cardDesc(c,f.role);
     let badge='';
     if(isActivePlayer){
       const committed=f.committed.some(h=>h.n===c.n);
-      const hand=isPlayerFighter?G.hand:G.p2hand;
-      const inHand=(hand||[]).some(h=>h.ownerName===f.name&&h.n===c.n);
+      const inHand=(f.hand||[]).some(h=>h.n===c.n);
       if(committed)badge=`<div style="font-size:.34rem;color:var(--gold);font-weight:700">✓ QUEUED</div>`;
       else if(inHand)badge=`<div style="font-size:.34rem;color:var(--green)">in hand</div>`;
     }

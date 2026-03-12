@@ -110,8 +110,7 @@ function closeCharProfile(){document.getElementById('charProfileOv').classList.r
 document.getElementById('charProfileOv')?.addEventListener('click',e=>{
   if(e.target===document.getElementById('charProfileOv'))closeCharProfile();
 });
-function activeHand(){return(G.mode==='pvp'&&G.pvpTurn==='p2')?G.p2hand:G.hand;}
-function activeFighters(){return(G.mode==='pvp'&&G.pvpTurn==='p2')?G.enemy:G.player;}
+// activeHand and activeFighters are defined in render.js
 
 function togglePauseMenu(){
   const ov=document.getElementById('pauseOv');
