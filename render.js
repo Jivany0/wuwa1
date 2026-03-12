@@ -17,6 +17,7 @@ function cardDesc(c,role){
       'execute_30':       'Deals DOUBLE damage to enemies below 30% HP',
       'double_hit_50':    'Hits the same target TWICE for 50% each (100% total)',
       'burn_dot_20':      'Hits random enemy + leaves burn: 20 damage next round',
+      'burn_dot_30':      'Hits random enemy + leaves burn: 30 damage next round',
       'self_shield_40':   'Attacks enemy + grants self a 40-point bonus shield',
       'heal_self_30':     'Buffs own ATK and heals self for 30 HP simultaneously',
       'shield_all_40':    'Heals lowest HP ally + grants 40-point shield to ALL allies',
@@ -25,7 +26,7 @@ function cardDesc(c,role){
       'shield_mini_all_25':'Full shield to self + 25-point mini-shield to every ally',
       'shield_lowest_def':'Grants shield to the lowest DEF ally instead of self',
       'reduce_next_hit_20':'Shields self + reduces the next hit any ally takes by 20%',
-      'ignore_shield':    'Debuff bypasses target\'s active shield entirely',
+      'ignore_shield':    'Bypasses target\'s active shield entirely',
       'remove_top_card':  'Debuffs target AND removes their highest-cost committed card',
       'delayed_debuff':   'Plants a detonation — debuff triggers at START of NEXT round',
       'random_target_debuff10': 'Hits random enemy + applies an extra -10% ATK debuff',
@@ -50,20 +51,19 @@ function cardDesc(c,role){
       'bonus_def_scaling':'Adds owner\'s DEF × 0.5 as bonus damage on top of ATK',
       'mark_plus15_dmg':  'Marks target — they take +15% more from ALL sources this round',
       'heal_two_lowest':  'Heals the TWO lowest HP allies (split evenly)',
-      'self_damage_20':   'Highest non-ULT base damage; costs 20 HP self-damage',
-      'untargetable':     'Debuffs target + makes owner untargetable by enemies this round',
+      'self_damage_20':   'Highest base damage; costs 20 HP self-damage',
+      'untargetable':     'Makes owner untargetable by enemies this round',
+      'chain_electro_25': 'Hits primary target + 25% chain to a random 2nd enemy',
+      'copy_buff':        'Copies the highest ATK buff from an ally to self',
+      'full_team_shield_30':'Grants 30-point shield to every alive ally',
+      'random_buff_team': 'Randomly buffs ATK of all alive allies',
       'none':             'Unique variety skill — special effect on use',
     };
     return `✦ ${vfxDescs[c.vfx]||'Unique variety effect'}`;
   }
-  switch(c.t){
-    case 'attack': return c.ult?'→ Lowest HP enemy (ULT)':'→ Random enemy (HP/ATK/DEF)';
-    case 'debuff': return `→ Reduces target ATK by ${Math.round((c.dv||0.20)*100)}% for 1 round\n${role==='subdps'?'Targets highest ATK enemy':'Targets random enemy'}`;
-    case 'heal':   return '→ 70% lowest HP ally\n30% self';
-    case 'defend': return '→ Shield self (scales w/ DEF)\nExpires next round';
-    case 'buff':   return role==='support'?'→ 70% top DPS\n30% self':'→ Self ATK +1 round';
-    default: return '';
-  }
+  // 4.0 skill cards — show the skill text directly
+  if(c.skill) return `→ ${c.skill}`;
+  return '';
 }
 
 function renderFighter(f,isPlayer,hideCommitted=false){
@@ -108,17 +108,19 @@ function buildFan(f,hideCommitted=false){
   if(!f.committed.length)return'';
   const total=f.committed.length;
   return f.committed.map((c,i)=>{
-    const tc=typeCol(c.t),offset=i*14,rot=(i-(total-1)/2)*4,zIdx=i+1,execOrder=total-i;
+    const offset=i*14,rot=(i-(total-1)/2)*4,zIdx=i+1,execOrder=total-i;
+    const lbl=c.variety?'VAR':'SKL';
+    const col=c.variety?'var(--gold)':'var(--dim2)';
     if(hideCommitted){
       return`<div class="fan-card fan-hidden"
         style="left:${6+offset}px;z-index:${zIdx};transform:rotate(${rot}deg);"
         title="Hidden">
         <div class="fan-order">${execOrder}</div>
         <div class="fan-ic">${c.ic}</div>
-        <div class="fan-tp" style="color:${tc}">${c.ult?'ULT':c.t.slice(0,3).toUpperCase()}</div>
+        <div class="fan-tp" style="color:${col}">${lbl}</div>
       </div>`;
     }
-    return`<div class="fan-card${c.ult?' ult-fan':''}"
+    return`<div class="fan-card${c.variety?' variety-fan':''}"
       style="left:${6+offset}px;z-index:${zIdx};transform:rotate(${rot}deg);"
       draggable="true"
       ondragstart="fanDragStart(event,'${f.id}',${i})"
@@ -129,7 +131,7 @@ function buildFan(f,hideCommitted=false){
       onclick="unplace('${f.id}',${i})" title="Drag to reorder · Tap to remove · ${c.n}">
       <div class="fan-order">${execOrder}</div>
       <div class="fan-ic">${c.ic}</div>
-      <div class="fan-tp" style="color:${tc}">${c.ult?'ULT':c.t.slice(0,3).toUpperCase()}</div>
+      <div class="fan-tp" style="color:${col}">${lbl}</div>
     </div>`;
   }).join('');
 }
@@ -138,26 +140,28 @@ function buildEnemyFan(f){
   if(!f.committed.length)return'';
   const total=f.committed.length;
   return f.committed.map((c,i)=>{
-    const tc=typeCol(c.t);
     const offset=i*14, rot=(i-(total-1)/2)*4, zIdx=i+1;
     const execOrder=total-i;
-    return`<div class="fan-card enemy-fan-card${c.ult?' ult-fan':''}"
+    const lbl=c.variety?'VAR':'SKL';
+    const col=c.variety?'var(--gold)':'var(--dim2)';
+    return`<div class="fan-card enemy-fan-card${c.variety?' variety-fan':''}"
       style="left:${6+offset}px;z-index:${zIdx};transform:rotate(${rot}deg);"
-      title="${c.n} · ${c.t}">
+      title="${c.n}">
       <div class="fan-order">${execOrder}</div>
       <div class="fan-ic">${c.ic}</div>
-      <div class="fan-tp" style="color:${tc}">${c.ult?'ULT':c.variety?'VAR':c.t.slice(0,3).toUpperCase()}</div>
+      <div class="fan-tp" style="color:${col}">${lbl}</div>
       <div class="fan-nm">${c.n}</div>
     </div>`;
   }).join('');
 }
 
 function renderHandCard(hc){
-  const canUse=activeEnergy()>=hc.c&&G.phase==='commit'&&!G.done;
-  const tc=typeCol(hc.t);
-  const val=hc.t==='buff'?`+${Math.round((hc.bv||0)*100)}%ATK`:hc.t==='debuff'?`⬇️${Math.round((hc.dv||0.20)*100)}%ATK`:hc.v?`${hc.t==='attack'?'⚔️':'💚'}${hc.v}`:'';
-  const typeLabel = hc.ult?'⭐ULT':hc.variety?`✦${hc.t.toUpperCase()}`:hc.t.toUpperCase();
-  return`<div class="hcard${canUse?'':' hcdis'}${hc.ult?' ultimate-card':''}${hc.variety?' variety-card':''}" id="hc-${hc.hid}"
+  const canUse=activeEnergy()>=1&&G.phase==='commit'&&!G.done;
+  const isVariety=hc.variety;
+  const val=hc.v?`⚔️${hc.v}`:(hc.shield?`🛡️${hc.shield}`:'');
+  const typeLabel = isVariety ? '✦VAR' : 'SKILL';
+  const borderStyle = isVariety ? 'variety-card' : '';
+  return`<div class="hcard${canUse?'':' hcdis'}${isVariety?' variety-card':''}" id="hc-${hc.hid}"
     ontouchstart="hcTouchStart(event,'${hc.hid}')"
     ontouchend="hcTouchEnd(event,'${hc.hid}')"
     ontouchcancel="hcTouchCancel('${hc.hid}')"
@@ -165,25 +169,27 @@ function renderHandCard(hc){
     <div class="hcard-cost${hc.c===0?' free-cost':''}">${hc.c===0?'F':hc.c}</div>
     <div class="hcard-ic">${hc.ic}</div>
     <div class="hcard-nm">${hc.n}</div>
-    <div class="hcard-tp" style="color:${tc}">${typeLabel}</div>
-    <div class="hcard-vl" style="color:${tc}">${val}</div>
+    <div class="hcard-tp" style="color:${isVariety?'var(--gold)':'var(--dim2)'}">${typeLabel}</div>
+    <div class="hcard-vl">${val}</div>
     <div class="hcard-ow">${hc.ownerName.split(' ')[0]}</div>
-    ${G.phase==='commit'&&!G.done?`<div class="discard-btn" onclick="event.stopPropagation();discardCard('${hc.hid}')" title="Discard">✕</div>`:''}
+    ${G.phase==='commit'&&!G.done&&!isVariety?`<div class="discard-btn" onclick="event.stopPropagation();discardCard('${hc.ownerId}','${hc.hid}')" title="Discard (costs 1 energy)">✕</div>`:''}
   </div>`;
 }
 
-function discardCard(hid){
-  if(G.phase!=='commit'||G.done)return;
-  if(G.mode==='pvp'&&G.pvpTurn==='p2'){
-    G.p2hand=G.p2hand.filter(c=>c.hid!==hid);
-  } else {
-    G.hand=G.hand.filter(c=>c.hid!==hid);
-  }
-  renderAll();
-}
+// discardCard is defined in battle.js — signature: discardCard(fid, hid)
+// Variety cards cannot be discarded (no discard button rendered for them)
 
 // ── Active hand / fighter helpers for PvP turn awareness ──
 function activeEnergy(){return(G.mode==='pvp'&&G.pvpTurn==='p2')?G.botEnergy:G.energy;}
+function activeHand(){
+  const isP2=G.mode==='pvp'&&G.pvpTurn==='p2';
+  const team=isP2?G.enemy:G.player;
+  return team.filter(f=>f.alive).flatMap(f=>f.hand||[]);
+}
+function activeFighters(){
+  const isP2=G.mode==='pvp'&&G.pvpTurn==='p2';
+  return isP2?G.enemy:G.player;
+}
 
 function renderAll(){
   const isPvP=G.mode==='pvp';
@@ -202,13 +208,13 @@ function renderAll(){
   document.getElementById('playerCol').innerHTML=G.player.map(f=>renderFighter(f,true,isP2Turn&&G.pvpTurn==='p2')).join('');
   document.getElementById('enemyCol').innerHTML=G.enemy.map(f=>renderFighter(f,isPvP&&isP2Turn,false)).join('');
 
-  // Hand display
-  let displayHand=G.hand;
-  let displayTeam=G.player;
-  if(isP2Turn){
-    displayHand=G.p2hand;
-    displayTeam=G.enemy;
-  }
+  // Hand display — 4.0: cards live on f.hand per fighter
+  const isP2Turn=isPvP&&G.pvpTurn==='p2';
+  const displayTeam=isP2Turn?G.enemy:G.player;
+
+  // Flatten all hands from the display team into one list
+  const displayHand=displayTeam.filter(f=>f.alive).flatMap(f=>f.hand||[]);
+
   const dpsCards=displayHand.filter(hc=>{const f=displayTeam.find(x=>x.name===hc.ownerName);return f&&f.role==='dps';});
   const subCards=displayHand.filter(hc=>{const f=displayTeam.find(x=>x.name===hc.ownerName);return f&&f.role==='subdps';});
   const suppCards=displayHand.filter(hc=>{const f=displayTeam.find(x=>x.name===hc.ownerName);return f&&f.role==='support';});
@@ -232,8 +238,7 @@ function renderAll(){
   } else {
     botEnBlock.style.display='none';
   }
-  document.getElementById('overdriveBar').style.display=
-    (isP2Turn?(G.botStartEnergy>=G.maxE):(G.startEnergy>=G.maxE))?'flex':'none';
+  document.getElementById('overdriveBar').style.display='none'; // overdrive removed in 4.0
   document.getElementById('guardBar').style.display=
     ((isP2Turn?G.enemy:G.player).some(f=>f.guard)&&G.round===1)?'flex':'none';
 
@@ -281,16 +286,19 @@ function hcTouchCancel(hid){clearTimeout(lpTimer);hideCardDetail();lpActive=fals
 function hcTap(hid){
   if(G.phase!=='commit'||G.done)return;
   const isP2=G.mode==='pvp'&&G.pvpTurn==='p2';
-  const hand=isP2?G.p2hand:G.hand;
   const team=isP2?G.enemy:G.player;
-  const hc=hand.find(c=>c.hid===hid);if(!hc)return;
-  const f=team.find(x=>x.name===hc.ownerName&&x.alive);if(!f)return;
+  // Find which fighter owns this card
+  let f=null, hc=null;
+  for(const fighter of team){
+    const found=fighter.hand&&fighter.hand.find(c=>c.hid===hid);
+    if(found){f=fighter;hc=found;break;}
+  }
+  if(!f||!hc||!f.alive)return;
   const energy=activeEnergy();
-  if(energy<hc.c)return;
-  if(isP2) G.botEnergy-=hc.c; else G.energy-=hc.c;
+  if(energy<1)return;
+  if(isP2) G.botEnergy--; else G.energy--;
   f.committed.push({...hc});
-  if(isP2) G.p2hand=G.p2hand.filter(c=>c.hid!==hid);
-  else G.hand=G.hand.filter(c=>c.hid!==hid);
+  f.hand=f.hand.filter(c=>c.hid!==hid);
   renderAll();
 }
 
@@ -300,8 +308,8 @@ function showCardDetail(hid,touch,pinned=false){
   const hc=activeHand().find(c=>c.hid===hid);if(!hc)return;
   const fighters=activeFighters();
   const f=fighters.find(x=>x.name===hc.ownerName);
-  const tc=typeCol(hc.t);
-  const val=hc.t==='buff'?`+${Math.round((hc.bv||0)*100)}% ATK`:hc.t==='debuff'?`⬇️ ${Math.round((hc.dv||0.20)*100)}% ATK`:hc.v?`${hc.t==='attack'?'⚔️ ':'💚 '}${hc.v}`:'';
+  const isVariety=hc.variety;
+  const val=hc.v?`⚔️ ${hc.v}`:(hc.shield?`🛡️ ${hc.shield}`:'');
   const desc=cardDesc(hc,f?f.role:'dps');
   let d=document.getElementById('cardDetailEl');
   if(!d){d=document.createElement('div');d.id='cardDetailEl';d.className='card-detail';document.body.appendChild(d);}
@@ -310,10 +318,10 @@ function showCardDetail(hid,touch,pinned=false){
   d.innerHTML=`<div class="cd-close" onclick="hideCardDetail()">✕</div>
     <span class="cd-ic">${hc.ic}</span>
     <div class="cd-nm">${hc.n}</div>
-    <div class="cd-type" style="color:${tc}">${hc.ult?'⭐ ULTIMATE':hc.t.toUpperCase()}</div>
-    <span class="cd-vl" style="color:${tc}">${val}</span>
+    <div class="cd-type" style="color:${isVariety?'var(--gold)':'var(--dim2)'}">${isVariety?'✦ VARIETY':'SKILL'}</div>
+    <span class="cd-vl">${val}</span>
     <div class="cd-desc">${desc}</div>
-    <div class="cd-cost">Cost: ${hc.c===0?'FREE':hc.c+' energy'} · ${hc.ownerName}</div>
+    <div class="cd-cost">Cost: ${hc.c===0?'FREE':'1 energy'} · ${hc.ownerName}</div>
     ${pinned?`<div class="cd-hint-pin">📌 pinned · click outside to close</div>`:`<div class="cd-hint">release to dismiss</div>`}`;
   const x=Math.min((touch.clientX||100)-85,window.innerWidth-180);
   const y=Math.max((touch.clientY||100)-220,8);
@@ -360,10 +368,11 @@ function unplace(fid,idx){
   const team=isP2?G.enemy:G.player;
   const f=team.find(x=>x.id===fid);if(!f)return;
   const card=f.committed[idx];if(!card)return;
-  if(isP2) G.botEnergy+=card.c; else G.energy+=card.c;
-  const newCard={...card,hid:'h'+Math.random().toString(36).slice(2)};
-  if(isP2) G.p2hand.push(newCard); else G.hand.push(newCard);
+  // Restore 1 energy
+  if(isP2) G.botEnergy=Math.min(3,G.botEnergy+1);
+  else G.energy=Math.min(3,G.energy+1);
+  // Return to f.hand
+  f.hand.push({...card,hid:'h'+Math.random().toString(36).slice(2)});
   f.committed.splice(idx,1);
   renderAll();
 }
-
