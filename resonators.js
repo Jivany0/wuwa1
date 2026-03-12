@@ -1,7 +1,5 @@
 // ═══════════════════════════════════════════════════════════
 // CONSTANTS & CONFIGURATION
-// Element variable names, resistance multiplier, and
-// role-based stat ranges for fighters
 // ═══════════════════════════════════════════════════════════
 const EL_VAR={Spectro:'--Spectro',Havoc:'--Havoc',Aero:'--Aero',Glacio:'--Glacio',Electro:'--Electro',Fusion:'--Fusion',Physical:'--Physical'};
 const RESISTANCE=0.9;
@@ -15,9 +13,262 @@ const ROLE_ST={
 const WEAPON_IC={Sword:"🗡️",Broadblade:"🔱",Gauntlets:"👊",Pistol:"🔫",Rectifier:"📡"};
 
 // ═══════════════════════════════════════════════════════════
+// CARD POOL SYSTEM (4.0)
+// Each resonator draws 3 cards from their combined pool:
+//   ALL_ROLE + ROLE_POOL[role] + EL_ROLE_POOL[el+role]
+// Variety card is always fixed in hand (slot 4)
+// All cards cost 1 energy. Max 2 duplicates per hand.
+// ═══════════════════════════════════════════════════════════
+
+// ── ALL ROLE ────────────────────────────────────────────────
+// Every resonator regardless of element or role can draw these
+const ALL_ROLE_POOL = [
+  {n:"War Cry",         ic:"📯", v:0,   shield:0,  c:0, skill:"Apply +10% ATK to the whole team for the next round."},
+  {n:"Apex Focus",      ic:"🎯", v:10,  shield:10, c:0, skill:"Prioritize highest ATK enemy."},
+  {n:"Echo Pulse",      ic:"⚡", v:10,  shield:0,  c:0, skill:"Gain 1 energy when hit by 2 cards this round."},
+  {n:"Iron Taunt",      ic:"🛡️", v:0,   shield:20, c:0, skill:"Taunt all DPS attacks and reduce their damage by 15%."},
+  {n:"Lone Taunt",      ic:"📣", v:0,   shield:60, c:0, skill:"Taunt enemy DPS attacks."},
+  {n:"Cleanse",         ic:"✨", v:0,   shield:120,c:0, skill:"Remove all debuffs on this resonator."},
+  {n:"Deflect",         ic:"🌀", v:40,  shield:30, c:0, skill:"Block one incoming attack next round."},
+  {n:"Damage Veil",     ic:"🌫️", v:40,  shield:20, c:1, skill:"Reduce damage taken by 20% this round."},
+  {n:"Momentum Charge", ic:"🔋", v:0,   shield:20, c:1, skill:"Gain 1 energy if this card is active and attacking per round (1 per round, only lasts one round)."},
+  {n:"Affinity Charge", ic:"💫", v:20,  shield:20, c:0, skill:"Gain 1 energy when hit by 2 cards of the same attribute this round."},
+  {n:"Team Pulse",      ic:"💚", v:0,   shield:20, c:0, skill:"Heal all allies by 30 HP."},
+  {n:"Resonance Mend",  ic:"🌿", v:0,   shield:40, c:1, skill:"Heal this resonator by 90–120 HP."},
+];
+
+// ── ROLE POOLS ──────────────────────────────────────────────
+const ROLE_POOL = {
+
+  dps: [
+    {n:"Last Stand",      ic:"💀", v:100, shield:25, c:1, skill:"Deal 150% damage if this resonator's HP is below 10%."},
+    {n:"Death's Edge",    ic:"☠️", v:110, shield:30, c:1, skill:"Deal 200% more damage if HP is below 5%."},
+    {n:"Void Strike",     ic:"🌑", v:110, shield:30, c:1, skill:"Apply lethal (true damage/ignore DEF) if this resonator's HP is below 30%."},
+    {n:"Desperation",     ic:"🔥", v:110, shield:40, c:1, skill:"Deal 120% damage if this resonator's HP is below 50%."},
+    {n:"First Blood",     ic:"⚔️", v:100, shield:45, c:1, skill:"Deal 120% damage if this resonator was attacked first in the round."},
+    {n:"Combat Instinct", ic:"🗡️", v:110, shield:20, c:1, skill:"Guaranteed critical if this resonator attacked first."},
+    {n:"Bloodhound Instinct",ic:"🐺",v:100,shield:20,c:1, skill:"Prioritize highest ATK enemy if this resonator's HP is below 50%."},
+    {n:"Predator's Mark", ic:"🎯", v:100, shield:30, c:1, skill:"Targeting enemy with more than 80% HP increases this card's damage by 20%."},
+    {n:"Triple Tempo",    ic:"⚡", v:35,  shield:30, c:1, skill:"Strike 3 times."},
+    {n:"Grudge Memory",   ic:"💢", v:110, shield:20, c:1, skill:"Deal 200% more damage if hit by the same card from the last 3 rounds."},
+    {n:"Echo Retaliation",ic:"🔄", v:90,  shield:40, c:1, skill:"Deal 130% damage if hit by the same card from the last round."},
+    {n:"Resonant Fury",   ic:"💥", v:100, shield:40, c:1, skill:"Deal 200% damage when hit by the same card in the same round."},
+    {n:"Sync Strike",     ic:"🌟", v:110, shield:30, c:1, skill:"Deal 120% damage if paired with a variety card this round."},
+    {n:"Perfect Crit",    ic:"💎", v:100, shield:30, c:1, skill:"Guaranteed critical if executed with a variety card."},
+    {n:"Affliction Fury", ic:"🩸", v:50,  shield:10, c:1, skill:"Attack twice if this resonator has a debuff."},
+    {n:"Shared Ruin",     ic:"💔", v:60,  shield:40, c:1, skill:"50% more damage if all resonators have HP below 50%."},
+    {n:"Underdog",        ic:"⬆️", v:90,  shield:30, c:1, skill:"Deal 120% damage if this resonator's HP% is lower than the target's HP%."},
+    {n:"Upward Pressure", ic:"🔺", v:100, shield:30, c:1, skill:"Deal 120% damage if the target's ATK is higher than this resonator's ATK."},
+    {n:"Buff Breaker",    ic:"🔨", v:90,  shield:40, c:1, skill:"Deal 130% damage if the target is buffed."},
+    {n:"Curse Exploit",   ic:"🎃", v:90,  shield:40, c:1, skill:"Deal 130% damage if the target is debuffed."},
+    {n:"Shield Shatter",  ic:"💥", v:100, shield:30, c:1, skill:"If this card breaks the target's shield, it deals 130% damage."},
+    {n:"Sunder Guard",    ic:"🔱", v:110, shield:40, c:1, skill:"Deal 30% more damage to a shielded target."},
+    {n:"Last Breath",     ic:"🌬️", v:100, shield:30, c:1, skill:"Deal 150% damage if this resonator attacks last in this round."},
+    {n:"Delayed Verdict", ic:"⏳", v:90,  shield:30, c:1, skill:"Deal 140% damage of 1 card after 3 rounds."},
+    {n:"Life Drain",      ic:"🩸", v:90,  shield:25, c:1, skill:"Heal this resonator by 90% of the damage inflicted by this card."},
+    {n:"Lifesteal Strike",ic:"❤️", v:80,  shield:40, c:1, skill:"Heal this resonator by the damage inflicted by this card."},
+    {n:"Vital Strike",    ic:"💗", v:70,  shield:60, c:1, skill:"Successful attacks heal this resonator's HP by 50."},
+  ],
+
+  subdps: [
+    {n:"Disrupt",         ic:"✂️", v:65,  shield:20, c:1, skill:"Remove the first committed card the target has."},
+    {n:"Wither",          ic:"🍂", v:100, shield:15, c:1, skill:"Target reduces incoming heal next round by 50%."},
+    {n:"Anti-Mend",       ic:"🚫", v:30,  shield:40, c:1, skill:"Apply -40% heal debuff for this round and next round."},
+    {n:"Resonance Crack", ic:"💢", v:0,   shield:20, c:0, skill:"Apply -20% damage debuff for this and next round."},
+    {n:"Energy Sever",    ic:"⚡", v:85,  shield:35, c:1, skill:"Destroy 1 of your opponent's energy."},
+    {n:"Energy Siphon",   ic:"🌀", v:90,  shield:20, c:1, skill:"Steal 1 energy from opponent's energy (if 0 energy, nothing will be stolen)."},
+    {n:"Void Siphon",     ic:"🌑", v:50,  shield:20, c:1, skill:"Steal 1 energy from the enemy when paired with a variety card."},
+    {n:"Jamming Field",   ic:"📡", v:90,  shield:40, c:1, skill:"Disable 1 card of the enemy this round."},
+    {n:"Mend Block",      ic:"🔒", v:10,  shield:20, c:0, skill:"Disable enemy heal card this round."},
+    {n:"Chaos Draw",      ic:"🎲", v:50,  shield:40, c:1, skill:"Randomly discard an enemy card when comboed by 2 cards this round."},
+    {n:"Curse Transfer",  ic:"☠️", v:110, shield:30, c:1, skill:"Transfer all debuffs of this resonator to the target."},
+    {n:"Status Nullify",  ic:"🚷", v:80,  shield:60, c:1, skill:"Disable the target's buff and debuff cards next round."},
+    {n:"Counter Seal",    ic:"🔐", v:60,  shield:60, c:1, skill:"When attacked by the enemy, their card next round is disabled."},
+    {n:"Armor Bypass",    ic:"💨", v:50,  shield:30, c:1, skill:"Skip the highest DEF stat target."},
+    {n:"Wall Seeker",     ic:"🧱", v:120, shield:10, c:1, skill:"Target the highest DEF if this resonator's HP is below 50%."},
+    {n:"Shield Predator", ic:"🎯", v:110, shield:20, c:1, skill:"Targets the lowest shield if attacked with 2 cards."},
+    {n:"Grudge Bloom",    ic:"🌹", v:100, shield:40, c:1, skill:"Deal 120% damage if debuffed last round."},
+    {n:"Resonant Chain",  ic:"🔗", v:90,  shield:35, c:1, skill:"When comboed by 2 cards, deals 120% damage next round."},
+    {n:"Mirror Fury",     ic:"🪞", v:50,  shield:30, c:1, skill:"Attack twice when attacked by the same attribute."},
+    {n:"Attunement Strike",ic:"🎵",v:110, shield:35, c:1, skill:"Draw a card when attacking a resonator of the same attribute."},
+    {n:"Apex Hunt",       ic:"🏹", v:70,  shield:30, c:1, skill:"Target the highest HP%."},
+    {n:"Taunt Breaker",   ic:"💪", v:100, shield:20, c:1, skill:"Deal 120% damage if this resonator is taunted."},
+  ],
+
+  support: [
+    {n:"Iron Veil",       ic:"🛡️", v:0,   shield:120,c:1, skill:"This resonator can't take critical damage this round."},
+    {n:"Fortify",         ic:"🏰", v:70,  shield:50, c:1, skill:"Make this resonator's DEF next round doubled, only lasts 1 round."},
+    {n:"Barrier Surge",   ic:"🌊", v:70,  shield:30, c:1, skill:"Gain 30% more shield next round if hit by 2 cards this round while this card is active."},
+    {n:"Barrier Hold",    ic:"🧲", v:40,  shield:50, c:1, skill:"Draw a card if this resonator's shield didn't break this round."},
+    {n:"Shield Crash",    ic:"💥", v:80,  shield:50, c:1, skill:"Deal 30% of the shield gained this round as bonus damage."},
+    {n:"Shatter Surge",   ic:"⚡", v:100, shield:20, c:1, skill:"Deal 130% damage if this resonator's shield broke this round."},
+    {n:"Thorned Mirror",  ic:"🌹", v:20,  shield:70, c:1, skill:"Reflect 30% damage taken if this resonator's HP is below 30%."},
+    {n:"Tactical Bond",   ic:"🤝", v:80,  shield:40, c:1, skill:"Add 15% of this card's shield depending on teammates' DEF/ATK."},
+    {n:"Resonant Barrier",ic:"🌀", v:90,  shield:30, c:1, skill:"Double the shield gain next round if this resonator was attacked by the same attribute."},
+    {n:"Guardian Taunt",  ic:"📣", v:30,  shield:60, c:1, skill:"Taunt the next round's attacks."},
+    {n:"Role Resonance",  ic:"🔮", v:20,  shield:30, c:1, skill:"Gain 1 energy when attacked by the same role."},
+    {n:"Shield Break Charge",ic:"🔋",v:80,shield:50, c:1, skill:"Gain 1 energy if this resonator's shield breaks."},
+    {n:"Over Dive",       ic:"🌊", v:80,  shield:30, c:1, skill:"Gain 1 energy when attacked with 50% HP."},
+    {n:"Mending Touch",   ic:"💚", v:0,   shield:40, c:1, skill:"Heal the lowest HP% teammate by 130."},
+    {n:"Crisis Mend",     ic:"🚑", v:0,   shield:30, c:1, skill:"Heal lowest HP% ally by 150 if they're below 30% HP."},
+    {n:"Barrier Mend",    ic:"💗", v:0,   shield:40, c:1, skill:"Heal this resonator by 50% of shield gained this round."},
+    {n:"Mending Surge",   ic:"🌟", v:20,  shield:20, c:1, skill:"Heal 210% of this card's damage to the lowest HP% teammate."},
+  ],
+};
+
+// ── ELEMENT + ROLE POOLS ────────────────────────────────────
+// Bonus cards exclusive to each element + role combination
+const EL_ROLE_POOL = {
+
+  // ── HAVOC ──
+  "Havoc-dps": [
+    {n:"Void Fury",       ic:"🌑", v:100, shield:20, c:1, skill:"Deal 120% damage if this resonator's HP is below 50%. Prioritize highest ATK enemy."},
+    {n:"Dark Affliction", ic:"💢", v:50,  shield:10, c:1, skill:"Attack twice if this resonator has a debuff. Havoc resonance."},
+    {n:"Curse Exploit",   ic:"🎃", v:90,  shield:40, c:1, skill:"Deal 130% damage if the target is debuffed."},
+  ],
+  "Havoc-subdps": [
+    {n:"Curse Transfer",  ic:"☠️", v:110, shield:30, c:1, skill:"Transfer all debuffs of this resonator to the target."},
+    {n:"Void Siphon",     ic:"🌑", v:50,  shield:20, c:1, skill:"Steal 1 energy from the enemy when paired with a variety card."},
+    {n:"Chaos Draw",      ic:"🎲", v:50,  shield:40, c:1, skill:"Randomly discard an enemy card when comboed by 2 cards this round."},
+  ],
+  "Havoc-support": [
+    {n:"Thorned Mirror",  ic:"🌹", v:20,  shield:70, c:1, skill:"Reflect 30% damage taken if this resonator's HP is below 30%."},
+    {n:"Shatter Surge",   ic:"⚡", v:100, shield:20, c:1, skill:"Deal 130% damage if this resonator's shield broke this round."},
+    {n:"Guardian Taunt",  ic:"📣", v:30,  shield:60, c:1, skill:"Taunt the next round's attacks."},
+  ],
+
+  // ── ELECTRO ──
+  "Electro-dps": [
+    {n:"Triple Tempo",    ic:"⚡", v:35,  shield:30, c:1, skill:"Strike 3 times."},
+    {n:"Combat Instinct", ic:"🗡️", v:110, shield:20, c:1, skill:"Guaranteed critical if this resonator attacked first."},
+    {n:"Resonant Fury",   ic:"💥", v:100, shield:40, c:1, skill:"Deal 200% damage when hit by the same card in the same round."},
+  ],
+  "Electro-subdps": [
+    {n:"Energy Sever",    ic:"⚡", v:85,  shield:35, c:1, skill:"Destroy 1 of your opponent's energy."},
+    {n:"Energy Siphon",   ic:"🌀", v:90,  shield:20, c:1, skill:"Steal 1 energy from opponent's energy (if 0 energy, nothing will be stolen)."},
+    {n:"Counter Seal",    ic:"🔐", v:60,  shield:60, c:1, skill:"When attacked by the enemy, their card next round is disabled."},
+  ],
+  "Electro-support": [
+    {n:"Role Resonance",  ic:"🔮", v:20,  shield:30, c:1, skill:"Gain 1 energy when attacked by the same role."},
+    {n:"Shield Break Charge",ic:"🔋",v:80,shield:50, c:1, skill:"Gain 1 energy if this resonator's shield breaks."},
+    {n:"Affinity Charge", ic:"💫", v:20,  shield:20, c:0, skill:"Gain 1 energy when hit by 2 cards of the same attribute this round."},
+  ],
+
+  // ── GLACIO ──
+  "Glacio-dps": [
+    {n:"Last Stand",      ic:"💀", v:100, shield:25, c:1, skill:"Deal 150% damage if this resonator's HP is below 10%."},
+    {n:"Void Strike",     ic:"🌑", v:110, shield:30, c:1, skill:"Apply lethal (true damage/ignore DEF) if this resonator's HP is below 30%."},
+    {n:"Shield Shatter",  ic:"💥", v:100, shield:30, c:1, skill:"If this card breaks the target's shield, it deals 130% damage."},
+  ],
+  "Glacio-subdps": [
+    {n:"Jamming Field",   ic:"📡", v:90,  shield:40, c:1, skill:"Disable 1 card of the enemy this round."},
+    {n:"Status Nullify",  ic:"🚷", v:80,  shield:60, c:1, skill:"Disable the target's buff and debuff cards next round."},
+    {n:"Mend Block",      ic:"🔒", v:10,  shield:20, c:0, skill:"Disable enemy heal card this round."},
+  ],
+  "Glacio-support": [
+    {n:"Iron Veil",       ic:"🛡️", v:0,   shield:120,c:1, skill:"This resonator can't take critical damage this round."},
+    {n:"Fortify",         ic:"🏰", v:70,  shield:50, c:1, skill:"Make this resonator's DEF next round doubled, only lasts 1 round."},
+    {n:"Resonant Barrier",ic:"🌀", v:90,  shield:30, c:1, skill:"Double the shield gain next round if this resonator was attacked by the same attribute."},
+  ],
+
+  // ── FUSION ──
+  "Fusion-dps": [
+    {n:"Buff Breaker",    ic:"🔨", v:90,  shield:40, c:1, skill:"Deal 130% damage if the target is buffed."},
+    {n:"Predator's Mark", ic:"🎯", v:100, shield:30, c:1, skill:"Targeting enemy with more than 80% HP increases this card's damage by 20%."},
+    {n:"Sunder Guard",    ic:"🔱", v:110, shield:40, c:1, skill:"Deal 30% more damage to a shielded target."},
+  ],
+  "Fusion-subdps": [
+    {n:"Anti-Mend",       ic:"🚫", v:30,  shield:40, c:1, skill:"Apply -40% heal debuff for this round and next round."},
+    {n:"Wither",          ic:"🍂", v:100, shield:15, c:1, skill:"Target reduces incoming heal next round by 50%."},
+    {n:"Resonance Crack", ic:"💢", v:0,   shield:20, c:0, skill:"Apply -20% damage debuff for this and next round."},
+  ],
+  "Fusion-support": [
+    {n:"Tactical Bond",   ic:"🤝", v:80,  shield:40, c:1, skill:"Add 15% of this card's shield depending on teammates' DEF/ATK."},
+    {n:"Barrier Mend",    ic:"💗", v:0,   shield:40, c:1, skill:"Heal this resonator by 50% of shield gained this round."},
+    {n:"Mending Surge",   ic:"🌟", v:20,  shield:20, c:1, skill:"Heal 210% of this card's damage to the lowest HP% teammate."},
+  ],
+
+  // ── SPECTRO ──
+  "Spectro-dps": [
+    {n:"Sync Strike",     ic:"🌟", v:110, shield:30, c:1, skill:"Deal 120% damage if paired with a variety card this round."},
+    {n:"Perfect Crit",    ic:"💎", v:100, shield:30, c:1, skill:"Guaranteed critical if executed with a variety card."},
+    {n:"Delayed Verdict", ic:"⏳", v:90,  shield:30, c:1, skill:"Deal 140% damage of 1 card after 3 rounds."},
+  ],
+  "Spectro-subdps": [
+    {n:"Attunement Strike",ic:"🎵",v:110, shield:35, c:1, skill:"Draw a card when attacking a resonator of the same attribute."},
+    {n:"Mirror Fury",     ic:"🪞", v:50,  shield:30, c:1, skill:"Attack twice when attacked by the same attribute."},
+    {n:"Taunt Breaker",   ic:"💪", v:100, shield:20, c:1, skill:"Deal 120% damage if this resonator is taunted."},
+  ],
+  "Spectro-support": [
+    {n:"Barrier Hold",    ic:"🧲", v:40,  shield:50, c:1, skill:"Draw a card if this resonator's shield didn't break this round."},
+    {n:"Barrier Surge",   ic:"🌊", v:70,  shield:30, c:1, skill:"Gain 30% more shield next round if hit by 2 cards this round while this card is active."},
+    {n:"Over Dive",       ic:"🌊", v:80,  shield:30, c:1, skill:"Gain 1 energy when attacked with 50% HP."},
+  ],
+
+  // ── AERO ──
+  "Aero-dps": [
+    {n:"Last Breath",     ic:"🌬️", v:100, shield:30, c:1, skill:"Deal 150% damage if this resonator attacks last in this round."},
+    {n:"Underdog",        ic:"⬆️", v:90,  shield:30, c:1, skill:"Deal 120% damage if this resonator's HP% is lower than the target's HP%."},
+    {n:"Strike Advance",  ic:"💨", v:80,  shield:30, c:1, skill:"Draw a card if this resonator attacked first."},
+  ],
+  "Aero-subdps": [
+    {n:"Disrupt",         ic:"✂️", v:65,  shield:20, c:1, skill:"Remove the first committed card the target has."},
+    {n:"Armor Bypass",    ic:"💨", v:50,  shield:30, c:1, skill:"Skip the highest DEF stat target."},
+    {n:"Grudge Bloom",    ic:"🌹", v:100, shield:40, c:1, skill:"Deal 120% damage if debuffed last round."},
+  ],
+  "Aero-support": [
+    {n:"Damage Veil",     ic:"🌫️", v:40,  shield:20, c:1, skill:"Reduce damage taken by 20% this round."},
+    {n:"Crisis Mend",     ic:"🚑", v:0,   shield:30, c:1, skill:"Heal lowest HP% ally by 150 if they're below 30% HP."},
+    {n:"Mending Touch",   ic:"💚", v:0,   shield:40, c:1, skill:"Heal the lowest HP% teammate by 130."},
+  ],
+};
+
+// ─────────────────────────────────────────────────────────────
+// buildCardPool(resonator)
+// Returns the combined drawable pool for a resonator
+// (all_role + role + el_role), tagged with pool origin
+// ─────────────────────────────────────────────────────────────
+function buildCardPool(resonator) {
+  const {el, role} = resonator;
+  const elRoleKey = `${el}-${role}`;
+  const allCards = [
+    ...ALL_ROLE_POOL.map(c => ({...c, pool:"all"})),
+    ...(ROLE_POOL[role] || []).map(c => ({...c, pool:"role"})),
+    ...(EL_ROLE_POOL[elRoleKey] || []).map(c => ({...c, pool:"el_role"})),
+  ];
+  return allCards;
+}
+
+// ─────────────────────────────────────────────────────────────
+// drawHand(resonator)
+// Draws 3 random basic cards from the pool (max 2 duplicates)
+// Returns array of 3 cards + the variety card = 4 total
+// ─────────────────────────────────────────────────────────────
+function drawHand(resonator) {
+  const pool = buildCardPool(resonator);
+  const charName = resonator.name;
+  const variety = CHAR_CARDS[charName];          // single variety card object
+  const drawn = [];
+  const dupCount = {};
+
+  // Shuffle pool
+  const shuffled = [...pool].sort(() => Math.random() - 0.5);
+
+  for (const card of shuffled) {
+    if (drawn.length >= 3) break;
+    const key = card.n;
+    const count = dupCount[key] || 0;
+    if (count >= 2) continue;                    // max 2 duplicates
+    drawn.push({...card});
+    dupCount[key] = count + 1;
+  }
+
+  // Variety is always slot 4, fixed
+  return [...drawn, {...variety, variety: true}];
+}
+
+// ═══════════════════════════════════════════════════════════
 // RESONATOR ROSTER
-// Full list of all playable characters with their element,
-// role (dps/subdps/support), emoji avatar, and weapon type
 // ═══════════════════════════════════════════════════════════
 const RESONATORS=[
   {name:"Rover (Spectro)", el:"Spectro", role:"support", emoji:"🌟", weapon:"Sword"},
@@ -69,379 +320,54 @@ const RESONATORS=[
 ];
 
 // ═══════════════════════════════════════════════════════════
-// CHARACTER CARD POOLS (CHAR_CARDS)
-// Each resonator's unique set of cards: attack, heal, defend,
-// buff, debuff. Each card has: name(n), type(t), icon(ic),
-// value(v), cost(c), and optional ult/variety flags + vfx
+// CHAR_CARDS — Variety cards only (one per resonator)
+// These are fixed in hand slot 4 every round, never drawn
 // ═══════════════════════════════════════════════════════════
 const CHAR_CARDS={
-  "Rover (Spectro)":[
-    {n:"Soul Link",    t:"heal",   ic:"🌟",v:55,c:2},
-    {n:"Light Veil",   t:"defend", ic:"🛡️",v:85,c:2},
-    {n:"Resonance",    t:"buff",   ic:"✨",bv:.08,c:1},
-    {n:"Luminary",     t:"heal",   ic:"💫",v:80,c:3},
-    {n:"Starweave",    t:"defend", ic:"🌟",v:125,c:3,ult:true},
-    {n:"Star Fragment",t:"buff",ic:"🌠",bv:0.08,c:2,variety:true,vfx:"buff_allallies"},
-  ],
-  "Rover (Havoc)":[
-    {n:"Void Slash",   t:"attack", ic:"💜",v:62,c:2},
-    {n:"Rend",         t:"attack", ic:"🌑",v:52,c:1},
-    {n:"Dark Wave",    t:"attack", ic:"🌀",v:90,c:2},
-    {n:"Havoc Buff",   t:"buff",   ic:"💢",bv:.08,c:1},
-    {n:"Cataclysm",    t:"attack", ic:"💥",v:125,c:3,ult:true},
-    {n:"Void Devour",  t:"attack", ic:"🌑",v:72,c:2,variety:true,vfx:"consume_buff"},
-  ],
-  "Jiyan":[
-    {n:"Gale Cleave",  t:"attack", ic:"🌪️",v:65,c:2},
-    {n:"Wind Rush",    t:"attack", ic:"💨",v:52,c:1},
-    {n:"Storm Break",  t:"attack", ic:"🌊",v:90,c:2},
-    {n:"Tailwind",     t:"buff",   ic:"🎐",bv:.07,c:1},
-    {n:"Qingloong",    t:"attack", ic:"🐉",v:128,c:3,ult:true},
-    {n:"Dragon Spiral",t:"attack", ic:"🐉",v:76,c:2,variety:true,vfx:"self_shield_40"},
-  ],
-  "Calcharo":[
-    {n:"Wuthering",    t:"attack", ic:"⚡",v:60,c:2},
-    {n:"Resonator",    t:"attack", ic:"🌩️",v:50,c:1},
-    {n:"Deathblade",   t:"attack", ic:"💀",v:88,c:2},
-    {n:"Charge Up",    t:"buff",   ic:"🔋",bv:.09,c:1},
-    {n:"Soulrend",     t:"attack", ic:"⚡",v:122,c:3,ult:true},
-    {n:"Death Sentence",t:"attack",ic:"💀",v:80,c:2,variety:true,vfx:"execute_25"},
-  ],
-  "Encore":[
-    {n:"Flaming Lamb", t:"attack", ic:"🔥",v:58,c:2},
-    {n:"Wooly Atk",    t:"attack", ic:"🐑",v:51,c:1},
-    {n:"Infernal",     t:"attack", ic:"🌋",v:85,c:2},
-    {n:"Burning Soul", t:"buff",   ic:"♨️",bv:.10,c:2},
-    {n:"Cosmos",       t:"attack", ic:"☄️",v:130,c:3,ult:true},
-    {n:"Woolly Inferno",t:"attack",ic:"🐑",v:75,c:2,variety:true,vfx:"burn_dot_20"},
-  ],
-  "Jianxin":[
-    {n:"Taichi Fist",  t:"attack", ic:"🌬️",v:55,c:2},
-    {n:"Wind Jab",     t:"attack", ic:"💨",v:50,c:1},
-    {n:"Barrier",      t:"defend", ic:"🛡️",v:80,c:2},
-    {n:"Focus",        t:"buff",   ic:"🧘",bv:.06,c:1},
-    {n:"Abyssal",      t:"attack", ic:"🌀",v:120,c:3,ult:true},
-    {n:"Qi Absorption",t:"buff",   ic:"🌬️",bv:0.07,c:1,variety:true,vfx:"heal_self_30"},
-  ],
-  "Lingyang":[
-    {n:"Lion Fist",    t:"attack", ic:"❄️",v:58,c:2},
-    {n:"Ice Dash",     t:"attack", ic:"🧊",v:51,c:1},
-    {n:"Blizzard",     t:"attack", ic:"🌨️",v:85,c:2},
-    {n:"Frost Guard",  t:"defend", ic:"🛡️",v:76,c:1},
-    {n:"Mythical",     t:"attack", ic:"🦁",v:124,c:3,ult:true},
-    {n:"Mythical Pounce",t:"attack",ic:"🦁",v:58,c:1,variety:true,vfx:"none"},
-  ],
-  "Verina":[
-    {n:"Heal Bloom",   t:"heal",   ic:"🌿",v:58,c:2},
-    {n:"Petal Toss",   t:"defend", ic:"🌸",v:78,c:1},
-    {n:"Verdant Chain",t:"heal",   ic:"💚",v:82,c:3},
-    {n:"Nature Veil",  t:"buff",   ic:"🌱",bv:.07,c:1},
-    {n:"Arboretum",    t:"heal",   ic:"🌳",v:125,c:3,ult:true},
-    {n:"Verdant Overgrowth",t:"heal",ic:"🌺",v:90,c:2,variety:true,vfx:"shield_all_40"},
-  ],
-  "Aalto":[
-    {n:"Fog Blade",    t:"attack", ic:"🍃",v:52,c:2},
-    {n:"Mist Step",    t:"attack", ic:"💨",v:50,c:1},
-    {n:"Gust Barrage", t:"attack", ic:"🌪️",v:80,c:2},
-    {n:"Smokescreen",  t:"debuff", ic:"🌫️",dv:0.2,c:2},
-    {n:"Mistwalker",   t:"attack", ic:"🌬️",v:121,c:3,ult:true},
-    {n:"Vanishing Act",t:"debuff", ic:"🌫️",dv:0.20,c:2,variety:true,vfx:"untargetable"},
-  ],
-  "Baizhi":[
-    {n:"Healing Wind", t:"heal",   ic:"🌿",v:55,c:2},
-    {n:"Herb Shield",  t:"defend", ic:"🌱",v:76,c:1},
-    {n:"Verdant Burst",t:"heal",   ic:"💚",v:82,c:3},
-    {n:"Barrier Bloom",t:"defend", ic:"🌳",v:95,c:2},
-    {n:"Eternal Bloom",t:"heal",   ic:"🌸",v:122,c:3,ult:true},
-    {n:"Glacial Blossom",t:"heal", ic:"🌸",v:75,c:2,variety:true,vfx:"shield_lowest_50"},
-  ],
-  "Chixia":[
-    {n:"Fire Shot",    t:"attack", ic:"🔫",v:56,c:2},
-    {n:"Quick Draw",   t:"attack", ic:"💥",v:51,c:1},
-    {n:"Inferno Shot", t:"attack", ic:"🔥",v:84,c:2},
-    {n:"Heat Up",      t:"buff",   ic:"♨️",bv:.08,c:1},
-    {n:"Blazing Rain", t:"attack", ic:"🌋",v:127,c:3,ult:true},
-    {n:"Burst Fire",   t:"attack", ic:"🔫",v:60,c:2,variety:true,vfx:"double_hit_50"},
-  ],
-  "Danjin":[
-    {n:"Bloody Slash", t:"attack", ic:"🗡️",v:62,c:2},
-    {n:"Quick Slice",  t:"attack", ic:"⚔️",v:51,c:1},
-    {n:"Crimson Tide", t:"debuff", ic:"🩸",dv:0.22,c:2},
-    {n:"Blood Pact",   t:"buff",   ic:"💢",bv:.10,c:2},
-    {n:"Vermillion",   t:"attack", ic:"🔱",v:123,c:3,ult:true},
-    {n:"Life Drain",   t:"attack", ic:"🩸",v:62,c:2,variety:true,vfx:"lifesteal_40"},
-  ],
-  "Mortefi":[
-    {n:"Flame Arc",    t:"attack", ic:"🎯",v:54,c:2},
-    {n:"Ember",        t:"attack", ic:"🔥",v:50,c:1},
-    {n:"Ignition",     t:"debuff", ic:"☠️",dv:0.18,c:2},
-    {n:"Overheat",     t:"buff",   ic:"♨️",bv:.09,c:1},
-    {n:"Conflagrate",  t:"attack", ic:"🌋",v:126,c:3,ult:true},
-    {n:"Detonation Mark",t:"debuff",ic:"💣",dv:0.18,c:2,variety:true,vfx:"delayed_debuff"},
-  ],
-  "Sanhua":[
-    {n:"Ice Prison",   t:"attack", ic:"🌨️",v:54,c:2},
-    {n:"Cold Snap",    t:"attack", ic:"❄️",v:50,c:1},
-    {n:"Cryo Lock",    t:"debuff", ic:"🔒",dv:0.2,c:2},
-    {n:"Glacial Guard",t:"defend", ic:"🛡️",v:80,c:2},
-    {n:"Eternal Frost",t:"attack", ic:"🧊",v:122,c:3,ult:true},
-    {n:"Zero Point",   t:"attack", ic:"🌡️",v:70,c:2,variety:true,vfx:"bonus_debuffed_30"},
-  ],
-  "Taoqi":[
-    {n:"Block",        t:"defend", ic:"🛡️",v:90,c:2},
-    {n:"Great Wall",   t:"defend", ic:"🏯",v:110,c:2},
-    {n:"Taunt",        t:"buff",   ic:"📣",bv:.06,c:1},
-    {n:"Iron Heal",    t:"heal",   ic:"💚",v:52,c:1},
-    {n:"Unbreakable",  t:"defend", ic:"⛰️",v:130,c:3,ult:true},
-    {n:"Iron Fortress",t:"defend", ic:"🏯",v:120,c:2,variety:true,vfx:"shield_all_split"},
-  ],
-  "Yangyang":[
-    {n:"Wind Dance",   t:"attack", ic:"🎐",v:52,c:2},
-    {n:"Feather Slash",t:"attack", ic:"🪶",v:50,c:1},
-    {n:"Sky Rend",     t:"debuff", ic:"🌤️",dv:0.18,c:2},
-    {n:"Gale Step",    t:"buff",   ic:"💨",bv:.07,c:1},
-    {n:"Stormwing",    t:"attack", ic:"🌪️",v:120,c:3,ult:true},
-    {n:"Gale Cry",     t:"attack", ic:"🪶",v:52,c:1,variety:true,vfx:"target_lowest_hp"},
-  ],
-  "Yuanwu":[
-    {n:"Iron Body",    t:"defend", ic:"🛡️",v:88,c:2},
-    {n:"Thunder Guard",t:"defend", ic:"⚡",v:105,c:2},
-    {n:"Rally",        t:"buff",   ic:"📯",bv:.06,c:1},
-    {n:"Volt Heal",    t:"heal",   ic:"💚",v:50,c:1},
-    {n:"Thunderclad",  t:"defend", ic:"⛈️",v:128,c:3,ult:true},
-    {n:"Thunderclap Aura",t:"defend",ic:"⚡",v:100,c:2,variety:true,vfx:"shield_mini_all_25"},
-  ],
-  "Jinhsi":[
-    {n:"Stellar Strike",t:"attack",ic:"💫",v:65,c:2},
-    {n:"Radiance",      t:"attack",ic:"🌟",v:52,c:1},
-    {n:"Blazing Sun",   t:"attack",ic:"☀️",v:90,c:2},
-    {n:"Illuminate",    t:"buff",  ic:"✨",bv:.09,c:1},
-    {n:"Incarnation",   t:"attack",ic:"🌞",v:129,c:3,ult:true},
-    {n:"Incandescent Mark",t:"attack",ic:"☀️",v:78,c:2,variety:true,vfx:"mark_plus15_dmg"},
-  ],
-  "Changli":[
-    {n:"Flame Burst",  t:"attack", ic:"🔥",v:58,c:2},
-    {n:"Ember Shot",   t:"attack", ic:"💥",v:50,c:1},
-    {n:"Inferno Wave", t:"debuff", ic:"☠️",dv:0.22,c:2},
-    {n:"Burn Mark",    t:"buff",   ic:"♨️",bv:.08,c:1},
-    {n:"True Sight",   t:"attack", ic:"🌋",v:125,c:3,ult:true},
-    {n:"Truthseeker Flame",t:"attack",ic:"🔱",v:72,c:2,variety:true,vfx:"bonus_buffed_25pct"},
-  ],
-  "Xiangli Yao":[
-    {n:"Thunderclap",  t:"attack", ic:"⚡",v:60,c:2},
-    {n:"Chain Bolt",   t:"attack", ic:"🔗",v:51,c:1},
-    {n:"Judge Strike", t:"attack", ic:"⚖️",v:88,c:2},
-    {n:"Electro Field",t:"buff",   ic:"🌐",bv:.08,c:1},
-    {n:"Verdict",      t:"attack", ic:"⚖️",v:122,c:3,ult:true},
-    {n:"Final Verdict",t:"attack", ic:"⚖️",v:85,c:2,variety:true,vfx:"bonus_shield_20pct"},
-  ],
-  "Zhezhi":[
-    {n:"Brushstroke",  t:"attack", ic:"🧊",v:54,c:2},
-    {n:"Ink Frost",    t:"attack", ic:"❄️",v:50,c:1},
-    {n:"Cryo Canvas",  t:"debuff", ic:"🖼️",dv:0.2,c:2},
-    {n:"Ice Veil",     t:"defend", ic:"🛡️",v:80,c:2},
-    {n:"Masterpiece",  t:"attack", ic:"🎨",v:124,c:3,ult:true},
-    {n:"Living Painting",t:"attack",ic:"🎨",v:65,c:2,variety:true,vfx:"random_target_debuff10"},
-  ],
-  "Shorekeeper":[
-    {n:"Tidal Wave",   t:"heal",   ic:"🌊",v:58,c:2},
-    {n:"Sea Pulse",    t:"defend", ic:"💧",v:78,c:1},
-    {n:"Abyss Call",   t:"buff",   ic:"🌑",bv:.07,c:1},
-    {n:"Barrier Reef", t:"defend", ic:"🛡️",v:105,c:2},
-    {n:"Revelation",   t:"heal",   ic:"🌊",v:120,c:3,ult:true},
-    {n:"Abyssal Lullaby",t:"defend",ic:"🌊",v:110,c:2,variety:true,vfx:"shield_lowest_def"},
-  ],
-  "Youhu":[
-    {n:"Ice Guard",    t:"defend", ic:"🦊",v:88,c:2},
-    {n:"Frost Aura",   t:"buff",   ic:"❄️",bv:.07,c:1},
-    {n:"Cryo Shield",  t:"defend", ic:"🛡️",v:105,c:2},
-    {n:"Tail Whip",    t:"heal",   ic:"💚",v:52,c:1},
-    {n:"Arctic Fox",   t:"defend", ic:"🌨️",v:126,c:3,ult:true},
-    {n:"Spirit Fox Ward",t:"defend",ic:"🦊",v:80,c:1,variety:true,vfx:"none"},
-  ],
-  "Camellya":[
-    {n:"Petal Storm",  t:"attack", ic:"🌸",v:62,c:2},
-    {n:"Vine Lash",    t:"attack", ic:"🌿",v:51,c:1},
-    {n:"Bloom Burst",  t:"attack", ic:"💐",v:88,c:2},
-    {n:"Dark Bloom",   t:"debuff", ic:"☠️",dv:0.22,c:2},
-    {n:"Elegy",        t:"attack", ic:"🌺",v:128,c:3,ult:true},
-    {n:"Elegy Thorns", t:"attack", ic:"🌺",v:55,c:1,variety:true,vfx:"none"},
-  ],
-  "Lumi":[
-    {n:"Volt Shot",    t:"attack", ic:"💡",v:52,c:2},
-    {n:"Spark",        t:"attack", ic:"⚡",v:50,c:1},
-    {n:"Surge",        t:"debuff", ic:"🌩️",dv:0.18,c:2},
-    {n:"Amp Up",       t:"buff",   ic:"🔋",bv:.08,c:1},
-    {n:"Overload",     t:"attack", ic:"💥",v:120,c:3,ult:true},
-    {n:"Feedback Loop",t:"buff",   ic:"🔋",bv:0.08,c:1,variety:true,vfx:"draw_extra_card"},
-  ],
-  "Carlotta":[
-    {n:"Ice Bullet",   t:"attack", ic:"🔮",v:58,c:2},
-    {n:"Frost Shot",   t:"attack", ic:"❄️",v:50,c:1},
-    {n:"Crystal Rain", t:"attack", ic:"💎",v:85,c:2},
-    {n:"Chill Aura",   t:"buff",   ic:"🌡️",bv:.08,c:1},
-    {n:"Blizzard",     t:"attack", ic:"🧊",v:123,c:3,ult:true},
-    {n:"Glass Coffin", t:"attack", ic:"💎",v:82,c:2,variety:true,vfx:"refund_on_kill"},
-  ],
-  "Roccia":[
-    {n:"Rock Slam",    t:"attack", ic:"🪨",v:62,c:2},
-    {n:"Pebble Toss",  t:"attack", ic:"💜",v:51,c:1},
-    {n:"Gravity Crash",t:"debuff", ic:"🌑",dv:0.2,c:2},
-    {n:"Stone Wall",   t:"defend", ic:"🛡️",v:82,c:2},
-    {n:"Avalanche",    t:"attack", ic:"🏔️",v:126,c:3,ult:true},
-    {n:"Tectonic Shatter",t:"debuff",ic:"🪨",dv:0.20,c:2,variety:true,vfx:"shatter_highdef_15"},
-  ],
-  "Phoebe":[
-    {n:"Moonray",      t:"attack", ic:"🌙",v:54,c:2},
-    {n:"Star Dust",    t:"attack", ic:"⭐",v:50,c:1},
-    {n:"Lunar Veil",   t:"debuff", ic:"🌑",dv:0.18,c:2},
-    {n:"Moonveil",     t:"defend", ic:"🛡️",v:76,c:1},
-    {n:"Eclipse",      t:"attack", ic:"🌑",v:121,c:3,ult:true},
-    {n:"Crescent Omen",t:"attack", ic:"🌙",v:70,c:2,variety:true,vfx:"target_highest_hp"},
-  ],
-  "Brant":[
-    {n:"Dirge",        t:"heal",   ic:"💀",v:54,c:2},
-    {n:"Soul Guard",   t:"defend", ic:"🛡️",v:78,c:1},
-    {n:"Pale Veil",    t:"defend", ic:"🌫️",v:100,c:2},
-    {n:"Grim Pact",    t:"buff",   ic:"🔱",bv:.07,c:1},
-    {n:"Requiem",      t:"heal",   ic:"🎼",v:124,c:3,ult:true},
-    {n:"Death's Bargain",t:"buff", ic:"💀",bv:0.08,c:2,variety:true,vfx:"buff_lowest_hp_ally"},
-  ],
-  "Cantarella":[
-    {n:"Waltz Shield", t:"defend", ic:"🎭",v:88,c:2},
-    {n:"Masked Step",  t:"heal",   ic:"🎪",v:52,c:1},
-    {n:"Veil",         t:"defend", ic:"🌫️",v:100,c:2},
-    {n:"Venom Pact",   t:"buff",   ic:"☠️",bv:.07,c:1},
-    {n:"Finale",       t:"heal",   ic:"🎇",v:126,c:3,ult:true},
-    {n:"Masquerade Poison",t:"debuff",ic:"🎭",dv:0.18,c:1,variety:true,vfx:"target_lowest_hppct"},
-  ],
-  "Rover (Aero)":[
-    {n:"Wind Guard",   t:"defend", ic:"🌬️",v:85,c:2},
-    {n:"Aero Heal",    t:"heal",   ic:"💨",v:52,c:1},
-    {n:"Sky Barrier",  t:"defend", ic:"🛡️",v:105,c:2},
-    {n:"Gale Buff",    t:"buff",   ic:"🎐",bv:.07,c:1},
-    {n:"Tempest Veil", t:"defend", ic:"🌪️",v:130,c:3,ult:true},
-    {n:"Tailwind Blessing",t:"buff",ic:"🌬️",bv:0.08,c:2,variety:true,vfx:"buff_allallies"},
-  ],
-  "Zani":[
-    {n:"Spectral Fist",t:"attack", ic:"👊",v:60,c:2},
-    {n:"Ghost Jab",    t:"attack", ic:"👻",v:51,c:1},
-    {n:"Phantom Rush", t:"attack", ic:"💫",v:85,c:2},
-    {n:"Spirit Guard", t:"buff",   ic:"✨",bv:.08,c:1},
-    {n:"Oblivion",     t:"attack", ic:"🌑",v:122,c:3,ult:true},
-    {n:"Ghost Step",   t:"debuff", ic:"👻",dv:0.20,c:1,variety:true,vfx:"ignore_shield"},
-  ],
-  "Ciaccona":[
-    {n:"Music Blade",  t:"attack", ic:"🎵",v:52,c:2},
-    {n:"Note Strike",  t:"attack", ic:"🎶",v:50,c:1},
-    {n:"Cadence",      t:"debuff", ic:"🎼",dv:0.18,c:2},
-    {n:"Harmony",      t:"buff",   ic:"🎸",bv:.07,c:1},
-    {n:"Symphony",     t:"attack", ic:"🎺",v:120,c:3,ult:true},
-    {n:"Resonant Frequency",t:"debuff",ic:"🎵",dv:0.18,c:2,variety:true,vfx:"remove_top_card"},
-  ],
-  "Cartethyia":[
-    {n:"Petal Slash",  t:"attack", ic:"🌺",v:54,c:2},
-    {n:"Wind Kiss",    t:"attack", ic:"💨",v:50,c:1},
-    {n:"Blossom Storm",t:"attack", ic:"🌸",v:82,c:2},
-    {n:"Gentle Breeze",t:"buff",   ic:"🎐",bv:.07,c:1},
-    {n:"Flowering",    t:"attack", ic:"🌻",v:124,c:3,ult:true},
-    {n:"Petal Tempest",t:"attack", ic:"🌺",v:72,c:2,variety:true,vfx:"splash_second_40pct"},
-  ],
-  "Lupa":[
-    {n:"Wolf Fang",    t:"attack", ic:"🐺",v:62,c:2},
-    {n:"Pack Howl",    t:"attack", ic:"🌙",v:51,c:1},
-    {n:"Alpha Strike", t:"attack", ic:"⚔️",v:88,c:2},
-    {n:"Fury",         t:"buff",   ic:"🔥",bv:.10,c:2},
-    {n:"Bloodlust",    t:"attack", ic:"🩸",v:130,c:3,ult:true},
-    {n:"Pack Frenzy",  t:"buff",   ic:"🐺",bv:0.08,c:2,variety:true,vfx:"buff_top2_atk"},
-  ],
-  "Phrolova":[
-    {n:"Dark Talon",   t:"attack", ic:"🦅",v:62,c:2},
-    {n:"Dive",         t:"attack", ic:"💨",v:51,c:1},
-    {n:"Shred",        t:"debuff", ic:"☠️",dv:0.25,c:2},
-    {n:"Predator",     t:"buff",   ic:"🔥",bv:.09,c:1},
-    {n:"Storm Dive",   t:"attack", ic:"🌑",v:125,c:3,ult:true},
-    {n:"Apex Predator",t:"attack", ic:"🦅",v:80,c:2,variety:true,vfx:"target_highest_atk"},
-  ],
-  "Augusta":[
-    {n:"Crown Strike", t:"attack", ic:"👑",v:60,c:2},
-    {n:"Zap",          t:"attack", ic:"⚡",v:51,c:1},
-    {n:"Royal Arc",    t:"attack", ic:"🌩️",v:88,c:2},
-    {n:"Sovereign",    t:"buff",   ic:"🏆",bv:.10,c:1},
-    {n:"Dominion",     t:"attack", ic:"👑",v:128,c:3,ult:true},
-    {n:"Sovereign Decree",t:"debuff",ic:"👑",dv:0.20,c:2,variety:true,vfx:"debuff_all_enemies"},
-  ],
-  "Iuno":[
-    {n:"Aero Jab",     t:"attack", ic:"🎪",v:52,c:2},
-    {n:"Gust",         t:"attack", ic:"💨",v:50,c:1},
-    {n:"Wind Debuff",  t:"debuff", ic:"🌀",dv:0.18,c:2},
-    {n:"Breeze Buff",  t:"buff",   ic:"🎐",bv:.07,c:1},
-    {n:"Cyclone",      t:"attack", ic:"🌪️",v:120,c:3,ult:true},
-    {n:"Aerial Ambush",t:"attack", ic:"🎪",v:66,c:2,variety:true,vfx:"target_lowest_def"},
-  ],
-  "Galbrena":[
-    {n:"Flame Blade",  t:"attack", ic:"⚔️",v:62,c:2},
-    {n:"Fire Jab",     t:"attack", ic:"🔥",v:51,c:1},
-    {n:"Inferno Cut",  t:"attack", ic:"🌋",v:88,c:2},
-    {n:"War Cry",      t:"buff",   ic:"📯",bv:.10,c:1},
-    {n:"Reckoning",    t:"attack", ic:"⚡",v:127,c:3,ult:true},
-    {n:"Battle Veteran",t:"attack",ic:"⚔️",v:60,c:1,variety:true,vfx:"scale_hp_pct"},
-  ],
-  "Qiuyuan":[
-    {n:"Autumn Blade", t:"attack", ic:"🍂",v:52,c:2},
-    {n:"Leaf Dart",    t:"attack", ic:"🍃",v:50,c:1},
-    {n:"Wind Scar",    t:"debuff", ic:"🌬️",dv:0.18,c:2},
-    {n:"Harvest",      t:"buff",   ic:"🌾",bv:.07,c:1},
-    {n:"Last Leaf",    t:"attack", ic:"🍁",v:121,c:3,ult:true},
-    {n:"Autumn Reckoning",t:"buff",ic:"🌾",bv:0.07,c:1,variety:true,vfx:"stacking_buff"},
-  ],
-  "Chisa":[
-    {n:"Vortex Guard", t:"defend", ic:"🌀",v:88,c:2},
-    {n:"Dark Heal",    t:"heal",   ic:"💜",v:52,c:1},
-    {n:"Abyss Shield", t:"defend", ic:"🛡️",v:105,c:2},
-    {n:"Shadow Buff",  t:"buff",   ic:"🌑",bv:.07,c:1},
-    {n:"Abyss",        t:"defend", ic:"🌀",v:128,c:3,ult:true},
-    {n:"Null Vortex",  t:"defend", ic:"🌀",v:105,c:2,variety:true,vfx:"reduce_next_hit_20"},
-  ],
-  "Buling":[
-    {n:"Static Guard", t:"defend", ic:"⚡",v:85,c:2},
-    {n:"Volt Heal",    t:"heal",   ic:"💚",v:52,c:1},
-    {n:"Surge Shield", t:"defend", ic:"🛡️",v:105,c:2},
-    {n:"Charge Buff",  t:"buff",   ic:"🔋",bv:.06,c:1},
-    {n:"Overcharge",   t:"heal",   ic:"💡",v:120,c:3,ult:true},
-    {n:"Overcharge Field",t:"heal",ic:"⚡",v:68,c:2,variety:true,vfx:"restore_1_energy"},
-  ],
-  "Lynae":[
-    {n:"Spectro Blade",t:"attack", ic:"🌿",v:52,c:2},
-    {n:"Vine Strike",  t:"attack", ic:"🍃",v:50,c:1},
-    {n:"Root Debuff",  t:"debuff", ic:"🌱",dv:0.2,c:2},
-    {n:"Nature Buff",  t:"buff",   ic:"🌳",bv:.08,c:1},
-    {n:"Overgrowth",   t:"attack", ic:"🌲",v:122,c:3,ult:true},
-    {n:"Nature's Wrath",t:"attack",ic:"🌿",v:68,c:2,variety:true,vfx:"bonus_def_scaling"},
-  ],
-  "Mornye":[
-    {n:"Harvest Heal", t:"heal",   ic:"🌾",v:58,c:2},
-    {n:"Crop Shield",  t:"defend", ic:"🛡️",v:78,c:1},
-    {n:"Abundance",    t:"heal",   ic:"💚",v:82,c:3},
-    {n:"Blessing",     t:"buff",   ic:"✨",bv:.07,c:1},
-    {n:"Bounty",       t:"heal",   ic:"🌟",v:123,c:3,ult:true},
-    {n:"Abundant Harvest",t:"heal",ic:"🌾",v:65,c:2,variety:true,vfx:"heal_two_lowest"},
-  ],
-  "Aemeath":[
-    {n:"Flame Cross",  t:"attack", ic:"🔱",v:62,c:2},
-    {n:"Sacred Fire",  t:"attack", ic:"🔥",v:51,c:1},
-    {n:"Holy Blaze",   t:"attack", ic:"✝️",v:88,c:2},
-    {n:"Devotion",     t:"buff",   ic:"✨",bv:.10,c:1},
-    {n:"Revelation",   t:"attack", ic:"🌟",v:120,c:3,ult:true},
-    {n:"Divine Immolation",t:"attack",ic:"✝️",v:90,c:2,variety:true,vfx:"self_damage_20"},
-  ],
-  "Luuk Herssen":[
-    {n:"Spectro Blade",t:"attack", ic:"🗡️",v:62,c:2},
-    {n:"Quick Slash",  t:"attack", ic:"⚡",v:51,c:1},
-    {n:"Void Edge",    t:"attack", ic:"💫",v:88,c:2},
-    {n:"Battle Cry",   t:"buff",   ic:"📯",bv:.09,c:1},
-    {n:"Annihilation", t:"attack", ic:"💥",v:129,c:3,ult:true},
-    {n:"Spectral Execution",t:"attack",ic:"💀",v:85,c:2,variety:true,vfx:"execute_30"},
-  ],
+  "Rover (Spectro)": {n:"Star Fragment",       ic:"🌠", v:0,  shield:0,  c:1, variety:true, vfx:"buff_allallies"},
+  "Rover (Havoc)":   {n:"Void Devour",         ic:"🌑", v:72, shield:0,  c:1, variety:true, vfx:"consume_buff"},
+  "Jiyan":           {n:"Dragon Spiral",        ic:"🐉", v:76, shield:0,  c:1, variety:true, vfx:"self_shield_40"},
+  "Calcharo":        {n:"Death Sentence",       ic:"💀", v:80, shield:0,  c:1, variety:true, vfx:"execute_25"},
+  "Encore":          {n:"Woolly Inferno",       ic:"🐑", v:75, shield:0,  c:1, variety:true, vfx:"burn_dot_20"},
+  "Jianxin":         {n:"Qi Absorption",        ic:"🌬️", v:0,  shield:0,  c:1, variety:true, vfx:"heal_self_30"},
+  "Lingyang":        {n:"Mythical Pounce",      ic:"🦁", v:58, shield:0,  c:1, variety:true, vfx:"none"},
+  "Verina":          {n:"Verdant Overgrowth",   ic:"🌺", v:90, shield:0,  c:1, variety:true, vfx:"shield_all_40"},
+  "Aalto":           {n:"Vanishing Act",        ic:"🌫️", v:0,  shield:0,  c:1, variety:true, vfx:"untargetable"},
+  "Baizhi":          {n:"Glacial Blossom",      ic:"🌸", v:75, shield:0,  c:1, variety:true, vfx:"shield_lowest_50"},
+  "Chixia":          {n:"Burst Fire",           ic:"🔫", v:60, shield:0,  c:1, variety:true, vfx:"double_hit_50"},
+  "Danjin":          {n:"Life Drain",           ic:"🩸", v:62, shield:0,  c:1, variety:true, vfx:"lifesteal_40"},
+  "Mortefi":         {n:"Detonation Mark",      ic:"💣", v:0,  shield:0,  c:1, variety:true, vfx:"delayed_debuff"},
+  "Sanhua":          {n:"Zero Point",           ic:"🌡️", v:70, shield:0,  c:1, variety:true, vfx:"bonus_debuffed_30"},
+  "Taoqi":           {n:"Iron Fortress",        ic:"🏯", v:0,  shield:0,  c:1, variety:true, vfx:"shield_all_split"},
+  "Yangyang":        {n:"Gale Cry",             ic:"🪶", v:52, shield:0,  c:1, variety:true, vfx:"target_lowest_hp"},
+  "Yuanwu":          {n:"Thunderclap Aura",     ic:"⚡", v:0,  shield:0,  c:1, variety:true, vfx:"shield_mini_all_25"},
+  "Jinhsi":          {n:"Incandescent Mark",    ic:"☀️", v:78, shield:0,  c:1, variety:true, vfx:"mark_plus15_dmg"},
+  "Changli":         {n:"Truthseeker Flame",    ic:"🔱", v:72, shield:0,  c:1, variety:true, vfx:"bonus_buffed_25pct"},
+  "Xiangli Yao":     {n:"Final Verdict",        ic:"⚖️", v:85, shield:0,  c:1, variety:true, vfx:"bonus_shield_20pct"},
+  "Zhezhi":          {n:"Living Canvas",        ic:"🖼️", v:70, shield:0,  c:1, variety:true, vfx:"copy_buff"},
+  "Shorekeeper":     {n:"Tidal Embrace",        ic:"🌊", v:0,  shield:0,  c:1, variety:true, vfx:"full_team_shield_30"},
+  "Youhu":           {n:"Lucky Draw",           ic:"🦊", v:0,  shield:0,  c:1, variety:true, vfx:"random_buff_team"},
+  "Camellya":        {n:"Petal Storm",          ic:"🌸", v:68, shield:0,  c:1, variety:true, vfx:"burn_dot_30"},
+  "Lumi":            {n:"Overload Burst",       ic:"💡", v:65, shield:0,  c:1, variety:true, vfx:"chain_electro_25"},
+  "Carlotta":        {n:"Glass Coffin",         ic:"💎", v:82, shield:0,  c:1, variety:true, vfx:"refund_on_kill"},
+  "Roccia":          {n:"Tectonic Shatter",     ic:"🪨", v:0,  shield:0,  c:1, variety:true, vfx:"shatter_highdef_15"},
+  "Phoebe":          {n:"Crescent Omen",        ic:"🌙", v:70, shield:0,  c:1, variety:true, vfx:"target_highest_hp"},
+  "Brant":           {n:"Death's Bargain",      ic:"💀", v:0,  shield:0,  c:1, variety:true, vfx:"buff_lowest_hp_ally"},
+  "Cantarella":      {n:"Masquerade Poison",    ic:"🎭", v:0,  shield:0,  c:1, variety:true, vfx:"target_lowest_hppct"},
+  "Rover (Aero)":    {n:"Tailwind Blessing",    ic:"🌬️", v:0,  shield:0,  c:1, variety:true, vfx:"buff_allallies"},
+  "Zani":            {n:"Ghost Step",           ic:"👻", v:0,  shield:0,  c:1, variety:true, vfx:"ignore_shield"},
+  "Ciaccona":        {n:"Resonant Frequency",   ic:"🎵", v:0,  shield:0,  c:1, variety:true, vfx:"remove_top_card"},
+  "Cartethyia":      {n:"Petal Tempest",        ic:"🌺", v:72, shield:0,  c:1, variety:true, vfx:"splash_second_40pct"},
+  "Lupa":            {n:"Pack Frenzy",          ic:"🐺", v:0,  shield:0,  c:1, variety:true, vfx:"buff_top2_atk"},
+  "Phrolova":        {n:"Apex Predator",        ic:"🦅", v:80, shield:0,  c:1, variety:true, vfx:"target_highest_atk"},
+  "Augusta":         {n:"Sovereign Decree",     ic:"👑", v:0,  shield:0,  c:1, variety:true, vfx:"debuff_all_enemies"},
+  "Iuno":            {n:"Aerial Ambush",        ic:"🎪", v:66, shield:0,  c:1, variety:true, vfx:"target_lowest_def"},
+  "Galbrena":        {n:"Battle Veteran",       ic:"⚔️", v:60, shield:0,  c:1, variety:true, vfx:"scale_hp_pct"},
+  "Qiuyuan":         {n:"Autumn Reckoning",     ic:"🌾", v:0,  shield:0,  c:1, variety:true, vfx:"stacking_buff"},
+  "Chisa":           {n:"Null Vortex",          ic:"🌀", v:0,  shield:0,  c:1, variety:true, vfx:"reduce_next_hit_20"},
+  "Buling":          {n:"Overcharge Field",     ic:"⚡", v:68, shield:0,  c:1, variety:true, vfx:"restore_1_energy"},
+  "Lynae":           {n:"Nature's Wrath",       ic:"🌿", v:68, shield:0,  c:1, variety:true, vfx:"bonus_def_scaling"},
+  "Mornye":          {n:"Abundant Harvest",     ic:"🌾", v:65, shield:0,  c:1, variety:true, vfx:"heal_two_lowest"},
+  "Aemeath":         {n:"Divine Immolation",    ic:"✝️", v:90, shield:0,  c:1, variety:true, vfx:"self_damage_20"},
+  "Luuk Herssen":    {n:"Spectral Execution",   ic:"💀", v:85, shield:0,  c:1, variety:true, vfx:"execute_30"},
 };
-
