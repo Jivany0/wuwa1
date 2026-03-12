@@ -233,7 +233,7 @@ function renderAll(){
   if(G.mode==='bot'){
     botEnBlock.style.display='flex';
     document.getElementById('botEnVal').textContent=G.botEnergy;
-    botEnBlock.style.opacity=G.botEnergy>=G.maxE?'1':'.55';
+    botEnBlock.style.opacity=G.botEnergy>=3?'1':'.55';
   } else {
     botEnBlock.style.display='none';
   }
