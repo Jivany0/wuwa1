@@ -240,37 +240,50 @@ function buildCardPool(resonator) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// drawHand(resonator)
-// Rules:
-//   - Always draws exactly 3 basic cards (max 2 dupes per card name)
-//   - Variety card has a 60% chance to appear (max 1, never duplicated)
-//   - Max 4 cards per resonator (3 basics + maybe 1 variety)
-//   - Team max = 9 cards (3 basics × 3 fighters, variety is bonus on top)
+// buildTeamDeck(fighters)
+// Builds a full shuffled deck for a 3-fighter team.
+// Per fighter: up to 6 basic cards (max 2 copies of same name),
+// plus exactly 1 variety card if they have one.
+// Deck is shuffled before returning.
 // ─────────────────────────────────────────────────────────────
-function drawHand(resonator) {
-  const pool = buildCardPool(resonator);
-  const charName = resonator.name;
-  const variety = CHAR_CARDS[charName];
-  const drawn = [];
-  const dupCount = {};
-
-  // Always draw exactly 3 basics, max 2 dupes per card name
-  const shuffled = [...pool].sort(() => Math.random() - 0.5);
-  for (const card of shuffled) {
-    if (drawn.length >= 3) break;
-    const key = card.n;
-    const count = dupCount[key] || 0;
-    if (count >= 2) continue;
-    drawn.push({...card});
-    dupCount[key] = count + 1;
+function buildTeamDeck(fighters) {
+  const deck = [];
+  for (const f of fighters) {
+    const pool = buildCardPool(f);
+    const shuffled = shuf([...pool]);
+    const dupCount = {};
+    let added = 0;
+    for (const card of shuffled) {
+      if (added >= 6) break;
+      const key = card.n;
+      const count = dupCount[key] || 0;
+      if (count >= 2) continue;
+      deck.push({ ...card, ownerId: f.id, ownerName: f.name,
+        hid: 'h' + Math.random().toString(36).slice(2) });
+      dupCount[key] = count + 1;
+      added++;
+    }
+    const variety = CHAR_CARDS[f.name];
+    if (variety) {
+      deck.push({ ...variety, variety: true, ownerId: f.id, ownerName: f.name,
+        hid: 'h' + Math.random().toString(36).slice(2) });
+    }
   }
+  return shuf(deck);
+}
 
-  // Variety: 60% chance, only 1, never a duplicate
-  if (variety && Math.random() < 0.60) {
-    drawn.push({...variety, variety: true});
+// ─────────────────────────────────────────────────────────────
+// drawFromDeck(deck, hand, n)
+// Moves up to n cards from deck → hand, capped so hand ≤ 9.
+// Mutates both arrays in place.
+// ─────────────────────────────────────────────────────────────
+function drawFromDeck(deck, hand, n) {
+  const toDraw = Math.min(n, Math.max(0, 9 - hand.length), deck.length);
+  for (let i = 0; i < toDraw; i++) {
+    const card = deck.shift();
+    card.hid = 'h' + Math.random().toString(36).slice(2);
+    hand.push(card);
   }
-
-  return drawn; // 3 or 4 cards
 }
 
 // ═══════════════════════════════════════════════════════════

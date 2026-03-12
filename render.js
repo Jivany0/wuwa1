@@ -76,12 +76,7 @@ function renderFighter(f,isPlayer,hideCommitted=false){
   if(f.guard)pips+=`<span class="guard-pip">🛡️Grd</span>`;
   if(f.overdrive)pips+=`<span class="overdrive-pip">⚡OD</span>`;
   if(f.shield>0)pips+=`<span class="guard-pip">🛡️${f.shield}</span>`;
-  // Attack order badge — shown during resolve phase
-  const orderBadge = (G.phase==='resolve' && f._attackOrder)
-    ? `<div class="atk-order-badge ord-${f._attackOrder}">${f._attackOrder}<span class="atk-order-suffix">${f._attackOrder===1?'st':f._attackOrder===2?'nd':f._attackOrder===3?'rd':'th'}</span></div>`
-    : '';
   const header=`<div class="f-header" onclick="showPeek('${f.id}',event)">
-    ${orderBadge}
     <div class="f-avatar" style="background:${boxCol}20;border:2px solid ${boxCol}55">${f.emoji}</div>
     <div class="f-body">
       <div class="f-top">
@@ -94,7 +89,7 @@ function renderFighter(f,isPlayer,hideCommitted=false){
         <div class="hp-lbl" style="color:${hpBarColor}">${Math.max(0,f.hp)}/${f.maxHp}</div>
       </div>
       ${pips?`<div class="buff-row">${pips}</div>`:''}
-      <div class="peek-hint">👁 tap · right-click card for details</div>
+      <div class="peek-hint">👁 tap to peek</div>
     </div>
   </div>`;
   if(!isPlayer){
@@ -188,8 +183,7 @@ function renderHandCard(hc){
 function activeEnergy(){return(G.mode==='pvp'&&G.pvpTurn==='p2')?G.botEnergy:G.energy;}
 function activeHand(){
   const isP2=G.mode==='pvp'&&G.pvpTurn==='p2';
-  const team=isP2?G.enemy:G.player;
-  return team.filter(f=>f.alive).flatMap(f=>f.hand||[]);
+  return isP2?(G.enemyHand||[]):(G.playerHand||[]);
 }
 function activeFighters(){
   const isP2=G.mode==='pvp'&&G.pvpTurn==='p2';
@@ -213,15 +207,13 @@ function renderAll(){
   document.getElementById('playerCol').innerHTML=G.player.map(f=>renderFighter(f,true,isP2Turn&&G.pvpTurn==='p2')).join('');
   document.getElementById('enemyCol').innerHTML=G.enemy.map(f=>renderFighter(f,isPvP&&isP2Turn,false)).join('');
 
-  // Hand display — 4.0: cards live on f.hand per fighter
+  // Hand display — shared team hand, cards grouped by owner's role
   const displayTeam=isP2Turn?G.enemy:G.player;
+  const displayHand=isP2Turn?(G.enemyHand||[]):(G.playerHand||[]);
 
-  // Flatten all hands from the display team into one list
-  const displayHand=displayTeam.filter(f=>f.alive).flatMap(f=>f.hand||[]);
-
-  const dpsCards=displayHand.filter(hc=>{const f=displayTeam.find(x=>x.name===hc.ownerName);return f&&f.role==='dps';});
-  const subCards=displayHand.filter(hc=>{const f=displayTeam.find(x=>x.name===hc.ownerName);return f&&f.role==='subdps';});
-  const suppCards=displayHand.filter(hc=>{const f=displayTeam.find(x=>x.name===hc.ownerName);return f&&f.role==='support';});
+  const dpsCards=displayHand.filter(hc=>{const f=displayTeam.find(x=>x.id===hc.ownerId);return f&&f.role==='dps'&&f.alive;});
+  const subCards=displayHand.filter(hc=>{const f=displayTeam.find(x=>x.id===hc.ownerId);return f&&f.role==='subdps'&&f.alive;});
+  const suppCards=displayHand.filter(hc=>{const f=displayTeam.find(x=>x.id===hc.ownerId);return f&&f.role==='support'&&f.alive;});
 
   document.getElementById('handDpsCards').innerHTML=dpsCards.map(renderHandCard).join('');
   document.getElementById('handSubCards').innerHTML=subCards.map(renderHandCard).join('');
@@ -290,19 +282,16 @@ function hcTouchCancel(hid){clearTimeout(lpTimer);hideCardDetail();lpActive=fals
 function hcTap(hid){
   if(G.phase!=='commit'||G.done)return;
   const isP2=G.mode==='pvp'&&G.pvpTurn==='p2';
+  const hand=isP2?G.enemyHand:G.playerHand;
   const team=isP2?G.enemy:G.player;
-  // Find which fighter owns this card
-  let f=null, hc=null;
-  for(const fighter of team){
-    const found=fighter.hand&&fighter.hand.find(c=>c.hid===hid);
-    if(found){f=fighter;hc=found;break;}
-  }
-  if(!f||!hc||!f.alive)return;
-  const energy=activeEnergy();
-  if(energy<1)return;
+  const hc=hand.find(c=>c.hid===hid);if(!hc)return;
+  const f=team.find(x=>x.id===hc.ownerId);if(!f||!f.alive)return;
+  if(activeEnergy()<1)return;
+  if(f.committed.length>=3)return;
   if(isP2) G.botEnergy--; else G.energy--;
   f.committed.push({...hc});
-  f.hand=f.hand.filter(c=>c.hid!==hid);
+  const idx=hand.findIndex(c=>c.hid===hid);
+  if(idx!==-1) hand.splice(idx,1);
   renderAll();
 }
 
@@ -339,7 +328,7 @@ function hideCardDetail(){
 }
 
 document.addEventListener('mousedown',e=>{
-  // Close card detail on any click (if pinned, close on click outside popup)
+  // Close pinned popup if clicking outside it
   if(_cardDetailPinned){
     const d=document.getElementById('cardDetailEl');
     if(d&&!d.contains(e.target)){hideCardDetail();return;}
@@ -356,7 +345,7 @@ document.addEventListener('mouseup',e=>{
   if(lpActive&&!_cardDetailPinned){hideCardDetail();lpActive=false;}
 });
 
-// Right-click to show pinned card detail — closes on any click outside
+// Right-click to pin card detail
 document.addEventListener('contextmenu',e=>{
   const card=e.target.closest('.hcard');
   if(!card||card.classList.contains('hcdis'))return;
@@ -370,13 +359,12 @@ function unplace(fid,idx){
   if(G.phase!=='commit'||G.done)return;
   const isP2=G.mode==='pvp'&&G.pvpTurn==='p2';
   const team=isP2?G.enemy:G.player;
+  const hand=isP2?G.enemyHand:G.playerHand;
   const f=team.find(x=>x.id===fid);if(!f)return;
   const card=f.committed[idx];if(!card)return;
-  // Restore 1 energy
   if(isP2) G.botEnergy=Math.min(3,G.botEnergy+1);
   else G.energy=Math.min(3,G.energy+1);
-  // Return to f.hand
-  f.hand.push({...card,hid:'h'+Math.random().toString(36).slice(2)});
+  hand.push({...card,hid:'h'+Math.random().toString(36).slice(2)});
   f.committed.splice(idx,1);
   renderAll();
 }

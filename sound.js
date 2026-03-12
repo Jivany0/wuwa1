@@ -624,23 +624,19 @@ function newRound(){
     }
     G._shards--;
   }
-  // Slow draw (legacy flag, kept for compatibility)
   G._slowDrawNext=0;
   G.round++;
   if(G.round>1&&G.round%10===1){
     G.escalation=+(G.escalation+0.10).toFixed(2);
     showCombo(`⚠️ Damage Escalation! ×${G.escalation.toFixed(1)}`);
   }
-  // 4.0: flat 3 energy per round, no carry over
-  G.energy=3;
-  G.botEnergy=3;
-  G.startEnergy=3;
-  G.botStartEnergy=3;
+  G.energy=3; G.botEnergy=3;
+  G.startEnergy=3; G.botStartEnergy=3;
   G.phase='commit';
   G.pvpTurn='p1';
-  // Refresh hands for all alive fighters (fresh 4 cards each round)
-  G.player.filter(f=>f.alive).forEach(f=>refreshHand(f));
-  G.enemy.filter(f=>f.alive).forEach(f=>refreshHand(f));
+  // Draw 3 new cards each round — unused cards carry over, hand capped at 9
+  drawFromDeck(G.playerDeck, G.playerHand, 3);
+  drawFromDeck(G.enemyDeck,  G.enemyHand,  3);
   if(G.mode==='pvp'){
     // Show "pass to P1" overlay at start of new round
     setTimeout(()=>{
@@ -693,11 +689,11 @@ function showPeek(fid,e){
   if(e)e.stopPropagation();
   const f=G.player.find(x=>x.id===fid)||G.enemy.find(x=>x.id===fid);if(!f)return;
   const isPlayerFighter=G.player.some(x=>x.id===fid);
-  const side=isPlayerFighter?'YOUR':'ENEMY';
-  const boxCol=`var(${EL_VAR[f.el]||'--Physical'})`;
-
-  const hand=f.hand||[];
+  const sharedHand=isPlayerFighter?G.playerHand:G.enemyHand;
+  const hand=(sharedHand||[]).filter(c=>c.ownerId===fid);
   const committed=f.committed||[];
+  const boxCol=`var(${EL_VAR[f.el]||'--Physical'})`;
+  const side=isPlayerFighter?'YOUR':'ENEMY';
 
   function cardHtml(c,tag){
     const isVariety=c.variety;
@@ -730,7 +726,6 @@ function showPeek(fid,e){
 
   document.getElementById('peekTitle').innerHTML=`<span style="color:${boxCol}">${f.emoji} ${f.name}</span> <span style="color:var(--dim2);font-size:.5rem">${side} · ${f.role.toUpperCase()}</span>`;
   document.getElementById('peekCards').innerHTML=html;
-
   const cx=e?(e.clientX||e.touches?.[0]?.clientX||100):100;
   const cy=e?(e.clientY||e.touches?.[0]?.clientY||100):100;
   const x=Math.min(cx+8,window.innerWidth-320);
