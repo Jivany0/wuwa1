@@ -562,7 +562,7 @@ function newRound(){
   if(G.done)return;
   [...G.player,...G.enemy].forEach(f=>{
     f.committed=[];f.overdrive=false;f.guard=false;
-    f.shield=0;f._attackOrder=0;f._attackTotal=0;
+    f.shield=0;
     if(f.buffRounds>0){f.buffRounds--;if(f.buffRounds===0)f.atkMult=1;}
     if(f.debuffRounds>0){f.debuffRounds--;if(f.debuffRounds===0){f.atk+=f.atkDebuffAmount||0;f.atkDebuffAmount=0;}}
     // Burn DoT
@@ -624,19 +624,23 @@ function newRound(){
     }
     G._shards--;
   }
+  // Slow draw (legacy flag, kept for compatibility)
   G._slowDrawNext=0;
   G.round++;
   if(G.round>1&&G.round%10===1){
     G.escalation=+(G.escalation+0.10).toFixed(2);
     showCombo(`⚠️ Damage Escalation! ×${G.escalation.toFixed(1)}`);
   }
-  G.energy=3; G.botEnergy=3;
-  G.startEnergy=3; G.botStartEnergy=3;
+  // 4.0: flat 3 energy per round, no carry over
+  G.energy=3;
+  G.botEnergy=3;
+  G.startEnergy=3;
+  G.botStartEnergy=3;
   G.phase='commit';
   G.pvpTurn='p1';
-  // Draw 3 new cards each round — unused cards carry over, hand capped at 9
-  drawFromDeck(G.playerDeck, G.playerHand, 3);
-  drawFromDeck(G.enemyDeck,  G.enemyHand,  3);
+  // Refresh hands for all alive fighters (fresh 4 cards each round)
+  G.player.filter(f=>f.alive).forEach(f=>refreshHand(f));
+  G.enemy.filter(f=>f.alive).forEach(f=>refreshHand(f));
   if(G.mode==='pvp'){
     // Show "pass to P1" overlay at start of new round
     setTimeout(()=>{
@@ -689,17 +693,28 @@ function showPeek(fid,e){
   if(e)e.stopPropagation();
   const f=G.player.find(x=>x.id===fid)||G.enemy.find(x=>x.id===fid);if(!f)return;
   const isPlayerFighter=G.player.some(x=>x.id===fid);
-  const sharedHand=isPlayerFighter?G.playerHand:G.enemyHand;
-  const hand=(sharedHand||[]).filter(c=>c.ownerId===fid);
-  const committed=f.committed||[];
+  const sharedHand=(isPlayerFighter?G.playerHand:G.enemyHand)||[];
+  const sharedDeck=(isPlayerFighter?G.playerDeck:G.enemyDeck)||[];
   const boxCol=`var(${EL_VAR[f.el]||'--Physical'})`;
   const side=isPlayerFighter?'YOUR':'ENEMY';
 
-  function cardHtml(c,tag){
+  // Show the fighter's 3 locked cards + their variety card
+  const lockedCards=f.lockedCards||[];
+  const variety=CHAR_CARDS[f.name];
+  const allCards=[...lockedCards,...(variety?[{...variety,variety:true}]:[])];
+
+  const html=allCards.map(c=>{
     const isVariety=c.variety;
     const val=c.v?`⚔️${c.v}`:(c.shield?`🛡️${c.shield}`:'');
     const desc=cardDesc(c,f.role);
-    const tagStyle=tag==='QUEUED'?'color:var(--gold);font-weight:700':tag==='IN HAND'?'color:var(--green)':'color:var(--dim2)';
+
+    // Status: queued → in hand → in deck → used (not in any)
+    const inCommitted=f.committed.some(h=>h.n===c.n);
+    const inHand=sharedHand.some(h=>h.ownerId===f.id&&h.n===c.n);
+    const inDeck=sharedDeck.some(h=>h.ownerId===f.id&&h.n===c.n);
+    const status=inCommitted?'QUEUED':inHand?'IN HAND':inDeck?'IN DECK':'USED';
+    const statusStyle=inCommitted?'color:var(--gold);font-weight:700':inHand?'color:var(--green)':inDeck?'color:var(--blue)':'color:var(--dim)';
+
     return`<div class="peek-card${isVariety?' peek-card-variety':''}">
       <div class="peek-card-cost${c.c===0?' free-cost':''}">${c.c===0?'F':c.c}</div>
       <div class="peek-card-ic">${c.ic}</div>
@@ -707,25 +722,12 @@ function showPeek(fid,e){
       <div class="peek-card-tp" style="color:${isVariety?'var(--gold)':'var(--dim2)'}">${isVariety?'✦VAR':'SKL'}</div>
       ${val?`<div class="peek-card-vl">${val}</div>`:''}
       ${desc?`<div class="peek-card-desc">${desc}</div>`:''}
-      <div class="peek-card-tag" style="${tagStyle}">${tag}</div>
+      <div class="peek-card-tag" style="${statusStyle}">${status}</div>
     </div>`;
-  }
-
-  let html='';
-  if(committed.length){
-    html+=`<div class="peek-section-lbl">⚔️ Committed (${committed.length})</div>`;
-    html+=`<div class="peek-cards-row">${committed.map(c=>cardHtml(c,'QUEUED')).join('')}</div>`;
-  }
-  if(hand.length){
-    html+=`<div class="peek-section-lbl">🃏 In Hand (${hand.length})</div>`;
-    html+=`<div class="peek-cards-row">${hand.map(c=>cardHtml(c,'IN HAND')).join('')}</div>`;
-  }
-  if(!committed.length&&!hand.length){
-    html=`<div style="color:var(--dim2);font-size:.6rem;padding:8px 0">No cards this round</div>`;
-  }
+  }).join('');
 
   document.getElementById('peekTitle').innerHTML=`<span style="color:${boxCol}">${f.emoji} ${f.name}</span> <span style="color:var(--dim2);font-size:.5rem">${side} · ${f.role.toUpperCase()}</span>`;
-  document.getElementById('peekCards').innerHTML=html;
+  document.getElementById('peekCards').innerHTML=`<div class="peek-cards-row">${html}</div>`;
   const cx=e?(e.clientX||e.touches?.[0]?.clientX||100):100;
   const cy=e?(e.clientY||e.touches?.[0]?.clientY||100):100;
   const x=Math.min(cx+8,window.innerWidth-320);
