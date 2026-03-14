@@ -5,9 +5,9 @@ const EL_VAR={Spectro:'--Spectro',Havoc:'--Havoc',Aero:'--Aero',Glacio:'--Glacio
 const RESISTANCE=0.9;
 
 const ROLE_ST={
-  dps:    {hp:[300,320], atk:[70,80],  def:[30,35]},
-  subdps: {hp:[400,420], atk:[55,65],  def:[50,60]},
-  support:{hp:[500,520], atk:[20,25],  def:[90,100]},
+  dps:    {hp:[700, 720], atk:[70,80],  def:[30,35]},
+  subdps: {hp:[800, 820], atk:[55,65],  def:[50,60]},
+  support:{hp:[980, 1000], atk:[20,25],  def:[90,100]},
 };
 
 const WEAPON_IC={Sword:"🗡️",Broadblade:"🔱",Gauntlets:"👊",Pistol:"🔫",Rectifier:"📡"};
